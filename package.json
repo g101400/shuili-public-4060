@@ -1,0 +1,10 @@
+{
+  "name": "shuili-yitu-loongson",
+  "version": "2.3.0",
+  "productName": "水利工程一张图",
+  "description": "水利工程一张图（龙芯版·浏览器壳：天地图底图/奥维ovkmz互通/多照片/导入导出，支持离线）",
+  "homepage": "https://techpromo.cn/shuili-yitu",
+  "build": {
+    "productName": "水利工程一张图"
+  }
+}
