@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>水利工程一张图</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#0f1b2d">
+<link rel="stylesheet" href="lib/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="map"></div>
+
+<!-- 地图控件：放大 / 缩小 / 收藏位置 / 返回收藏 -->
+<div class="mapctl" id="mapctl">
+  <button class="mapctl-btn" id="mcZoomIn" title="放大">＋</button>
+  <button class="mapctl-btn" id="mcZoomOut" title="缩小">－</button>
+  <button class="mapctl-btn" id="mcFav" title="收藏当前窗口（记录视图范围）">⭐</button>
+  <button class="mapctl-btn" id="mcFavGo" title="返回收藏窗口">📍</button>
+</div>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <div class="title">📐 水利一张图</div>
+  <div class="search"><input id="search" placeholder="搜索建筑物名称…" autocomplete="off"></div>
+  <button class="iconbtn txt" id="btnLayer" title="图源">矢量</button>
+  <button class="iconbtn accent" id="btnFilter" title="筛选">🎛️</button>
+  <button class="iconbtn" id="btnList" title="列表">☰</button>
+  <button class="iconbtn exit" id="btnExit" title="退出当前页面">✕</button>
+<button class="iconbtn" id="btnMenu" title="菜单">≡</button>
+</div>
+
+<!-- 标记图例（左下角：自定义颜色/形状的建筑物名称示例） -->
+<div class="legend" id="legend" style="display:none"></div>
+
+<!-- 浮动主菜单按钮：始终可点，杜绝"找不到主菜单" -->
+<button class="fab-menu" id="fabMenu" title="主菜单">≡</button>
+
+<!-- 选点提示 -->
+<div class="pickmode" id="pickmode">点击地图选择坐标（再次点此取消）</div>
+
+<!-- 抽屉菜单 -->
+<div class="drawer" id="drawer">
+  <div class="head">功能菜单 <span class="close" id="drawerClose">×</span></div>
+  <div class="menu">
+    <!-- 置顶：查询 / 筛选（最高频，与一级分组并列） -->
+    <button class="menu-btn pin" data-act="search"><span class="ico">🔍</span><span>查询<span class="sub">按名称 / 管理所搜索</span></span></button>
+    <button class="menu-btn pin" data-act="filter"><span class="ico">🎛️</span><span>筛选<span class="sub">管理所 / 建筑物类型</span></span></button>
+
+    <!-- 快捷常用（v2.4）：用户自选常用功能，置于此位；设置/子菜单右键可增删 -->
+    <div class="mgroup collapsible" data-grp="快捷常用">快捷常用<span class="tg">＋</span></div>
+    <div class="msub" id="quickFavGroup"><div class="hint" style="padding:6px 10px">尚未设置常用功能：右键任意菜单项，或到「设置 → 快捷常用设置」勾选</div></div>
+
+    <div class="mgroup collapsible" data-grp="地图与位置">地图与位置<span class="tg">＋</span></div>
+    <div class="msub">
+    <button class="menu-btn" data-act="locate"><span class="ico">📍</span><span>定位我的位置<span class="sub">未授权将跳转系统定位设置</span></span></button>
+    <button class="menu-btn" data-act="coord"><span class="ico">🎯</span><span>获取经纬度<span class="sub">我的位置 / 地图点选 / 搜索</span></span></button>
+    <button class="menu-btn" data-act="nearby"><span class="ico">🧭</span><span>周边搜索<span class="sub">按中心点半径查找建筑物</span></span></button>
+    <button class="menu-btn" data-act="measure"><span class="ico">📏</span><span>测距<span class="sub">测量两点/建筑物距离</span></span></button>
+    <button class="menu-btn" data-act="layer"><span class="ico">🌐</span><span>图源切换<span class="sub">矢量地图 / 影像地图</span></span></button>
+    </div>
+
+    <div class="mgroup collapsible" data-grp="数据管理">数据管理<span class="tg">＋</span></div>
+    <div class="msub">
+    <button class="menu-btn" data-act="add"><span class="ico">➕</span><span>添加建筑物<span class="sub">先选坐标，再填信息</span></span></button>
+    <button class="menu-btn" data-act="import"><span class="ico">📥</span><span>导入<span class="sub">ovkmz / kmz / csv</span></span></button>
+    <button class="menu-btn" data-act="batchPhotos"><span class="ico">🖼️</span><span>批量导入照片<span class="sub">文件夹/zip/网盘，智能匹配</span></span></button>
+    <button class="menu-btn" data-act="batchSheets"><span class="ico">📑</span><span>批量导入建筑物<span class="sub">表格/csv/xlsx/zip</span></span></button>
+    <button class="menu-btn" data-act="export"><span class="ico">📤</span><span>导出<span class="sub">ovkmz / kmz / csv / 潮河</span></span></button>
+    <button class="menu-btn" data-act="exportPhotos"><span class="ico">📷</span><span>导出照片<span class="sub">zip/7z·本地·网盘·分享</span></span></button>
+    <button class="menu-btn" data-act="sync"><span class="ico">🔄</span><span>导出/导入我的改动<span class="sub">备份增删改</span></span></button>
+    <button class="menu-btn" data-act="delPhotos"><span class="ico">🗑️</span><span>删除照片<span class="sub">按管理所/时间批量删</span></span></button>
+    <button class="menu-btn" data-act="cleanInbox"><span class="ico">🧹</span><span>清理导入缓存<span class="sub">删除临时解压目录，释放空间</span></span></button>
+    </div>
+
+    <div class="mgroup collapsible" data-grp="传输与共享">传输与共享<span class="tg">＋</span></div>
+    <div class="msub">
+    <button class="menu-btn" data-act="netdisk"><span class="ico">☁️</span><span>网盘导入导出<span class="sub">百度/夸克（需配置凭证）</span></span></button>
+    <button class="menu-btn" data-act="lan"><span class="ico">📡</span><span>手机互传<span class="sub">两台手机局域网互传</span></span></button>
+    <button class="menu-btn" data-act="copyFromAndroid"><span class="ico">📥</span><span>从安卓复制照片<span class="sub">目录复制/链接，免整包入内存</span></span></button>
+    <button class="menu-btn" data-act="exportToAndroid"><span class="ico">📤</span><span>从安卓平台导出照片<span class="sub">导出安卓照片供他端用</span></span></button>
+    </div>
+
+    <div class="mgroup collapsible" data-grp="运行维护">运行维护<span class="tg">＋</span></div>
+    <div class="msub">
+    <button class="menu-btn" data-act="opsDefaultLoc"><span class="ico">🚩</span><span>设置默认出发位置<span class="sub">选择已有 / 自定义坐标</span></span></button>
+    <button class="menu-btn" data-act="opsPlan"><span class="ico">📋</span><span>运行维护计划<span class="sub">日常检查 / 例行维护 / 故障处理 / 应急响应 / 其他</span></span></button>
+    <button class="menu-btn" data-act="opsInspect"><span class="ico">🚶</span><span>巡视检查<span class="sub">巡视类型 / 坐标 / 计划内</span></span></button>
+    <button class="menu-btn" data-act="opsRoute"><span class="ico">🗺️</span><span>我的巡视路线<span class="sub">规划与查看巡视路线</span></span></button>
+    <button class="menu-btn" data-act="writeMemo"><span class="ico">📝</span><span>写备忘录<span class="sub">绑定建筑物 · 富文本 · 智能AI可查</span></span></button>
+    <button class="menu-btn" data-act="exportMemo"><span class="ico">📤</span><span>导出备忘录<span class="sub">关键词筛选 · Markdown/JSON</span></span></button>
+
+    </div>
+
+    <div class="mgroup collapsible" data-grp="智能AI">智能AI<span class="tg">＋</span></div>
+    <div class="msub">
+    <button class="menu-btn" data-act="aiSettings"><span class="ico">🤖</span><span>大模型 AI 设置<span class="sub">自定义模型 / 默认模型 / 自动调用策略</span></span></button>
+    <button class="menu-btn" data-act="aiQuery"><span class="ico">🔎</span><span>智能查询<span class="sub">内部台账问答 / 校验</span></span></button>
+    <button class="menu-btn" data-act="aiUpdate"><span class="ico">✨</span><span>智能更新<span class="sub">补全缺失字段(需确认)</span></span></button>
+    <button class="menu-btn" data-act="aiCorrect"><span class="ico">📌</span><span>智能纠错<span class="sub">标注错误说法</span></span></button>
+    <button class="menu-btn" data-act="aiChat"><span class="ico">💬</span><span>AI 对话助手<span class="sub">自由问答内部数据</span></span></button>
+    <button class="menu-btn" data-act="aiFreeQuery"><span class="ico">❓</span><span>智能问询<span class="sub">汇总/机构级问题(如:某处有几点所)</span></span></button>
+    <button class="menu-btn" data-act="aiHistory"><span class="ico">🕘</span><span>查询历史<span class="sub">按时间保存·可重查省词元</span></span></button>
+    </div>
+
+    <div class="mgroup collapsible" data-grp="设置">设置<span class="tg">＋</span></div>
+    <div class="msub">
+    <button class="menu-btn" data-act="orgManager"><span class="ico">🏛️</span><span>机构层级与默认名称管理<span class="sub">局/管理处/所/站/段 · 保存并全量同步</span></span></button>
+    <button class="menu-btn" data-act="btypeManager"><span class="ico">🏗️</span><span>建筑物类型管理<span class="sub">增删改类型名称 · 级联同步</span></span></button>
+    <button class="menu-btn" data-act="swUpgrade"><span class="ico">⬆️</span><span>软件升级<span class="sub">手动检测网盘新版 · 公开/内部通道隔离</span></span></button>
+    <button class="menu-btn" data-act="swCheckUpdate"><span class="ico">🔍</span><span>检查新版本<span class="sub">百度网盘 · 发现新版自动下载安装</span></span></button>
+    <button class="menu-btn" data-act="upExport"><span class="ico">💾</span><span>升级数据导出<span class="sub">升级/换机前备份 · 含照片 · 可导入旧版</span></span></button>
+    <button class="menu-btn" data-act="upImport"><span class="ico">📥</span><span>升级数据导入<span class="sub">还原备份 · 与导出格式一致</span></span></button>
+    <button class="menu-btn" data-act="quickFavSettings"><span class="ico">⭐</span><span>快捷常用设置<span class="sub">勾选常用功能到快捷菜单</span></span></button>
+    <button class="menu-btn" data-act="tiandituKey"><span class="ico">🗝️</span><span>天地图密钥管理<span class="sub">浏览器端/服务端 token · 防止过期</span></span></button>
+    <button class="menu-btn" data-act="reset"><span class="ico">♻️</span><span>初始化（重置为基础数据）</span></button>
+    <button class="menu-btn" data-act="delBuildings"><span class="ico">🏗️</span><span>删除所有建筑物<span class="sub">清空全部或按管理所/时间</span></span></button>
+    <button class="menu-btn" data-act="kbImportFile"><span class="ico">📥</span><span>导入外部文件存入知识库<span class="sub">pdf/docx/xlsx/图片 扫描件OCR·智能转md</span></span></button>
+    <button class="menu-btn" data-act="kbExport"><span class="ico">💾</span><span>导出知识库<span class="sub">md / txt / html · 主流知识库兼容</span></span></button>
+    <button class="menu-btn" data-act="kbImportBackup"><span class="ico">📦</span><span>导入知识库文件<span class="sub">md / txt / html 可多选 · 兼容旧zip</span></span></button>
+    <button class="menu-btn" data-act="kbQuery"><span class="ico">🔍</span><span>知识库查询<span class="sub">本地优先·可联网</span></span></button>
+    <button class="menu-btn" data-act="kbImportUrl"><span class="ico">🌐</span><span>从网页读取入库<span class="sub">网页/公众号/微博</span></span></button>
+    </div>
+
+    <div class="mgroup collapsible" data-grp="信息与帮助">信息与帮助<span class="tg">＋</span></div>
+    <div class="msub">
+    <button class="menu-btn" data-act="stats"><span class="ico">📊</span><span>统计概览</span></button>
+    <button class="menu-btn" data-act="errlog"><span class="ico">🐞</span><span>错误日志<span class="sub">查看 / 复制最近脚本错误</span></span></button>
+    <button class="menu-btn" data-act="photoInfo"><span class="ico">🖼️</span><span>照片<span class="sub">四平台目录/命名/调试</span></span></button>
+    <button class="menu-btn" data-act="changelog"><span class="ico">📝</span><span>版本变更<span class="sub" id="changelogSub">版本历史</span></span></button>
+    <button class="menu-btn" data-act="platmatrix"><span class="ico">🧭</span><span>四端功能对照单<span class="sub">四平台差异</span></span></button>
+    <button class="menu-btn" data-act="rebuild"><span class="ico">🪄</span><span>重建照片缩略图<span class="sub">历史大图批量生成缩略图</span></span></button>
+    <button class="menu-btn" data-act="about"><span class="ico">ℹ️</span><span>关于<span class="sub">科技推广中心</span></span></button>
+    <button class="menu-btn" data-act="help"><span class="ico">❓</span><span>帮助</span></button>
+    </div>
+  </div>
+</div>
+<div class="mask" id="mask"></div>
+
+<!-- 通用弹窗 -->
+<div class="modal-mask" id="modalMask"></div>
+<div class="modal" id="modal"><div class="mhead"><span id="modalTitle"></span><span class="x" id="modalClose">×</span></div><div class="mbody" id="modalBody"></div><div class="mfoot" id="modalFoot"></div></div>
+
+<!-- 列表栏 -->
+<div class="listbar" id="listbar">
+  <div class="lhead"><span class="lt">建筑物列表 <span class="cnt" id="listCnt"></span></span><span class="lx" id="listClose" title="关闭列表">×</span></div>
+  <div class="list-scroll" id="listScroll"></div>
+</div>
+
+<!-- 照片大图 -->
+<div class="lightbox" id="lightbox"><span class="close" id="lbClose">×</span><img id="lbImg"><div class="cap" id="lbCap"></div><div class="lb-idx" id="lbIdx"></div><button class="lb-sw prev" id="lbPrev">‹</button><button class="lb-sw next" id="lbNext">›</button><div class="lb-hint" id="lbHint">双击/双指放大 · 拖拽平移</div><div class="lb-bar" id="lbBar"><button class="lb-btn save" id="lbSave">保存</button><button class="lb-btn share" id="lbShare">分享</button><button class="lb-btn zoom" id="lbZoom">放大</button></div></div>
+
+<!-- 测距浮条 -->
+<div class="measurebar" id="measurebar">
+  <span class="mi" id="measureInfo">点击地图添加测量点</span>
+  <button class="mbtn" id="measureClear">清除</button>
+  <button class="mbtn" id="measureExit">退出</button>
+</div>
+
+<!-- 筛选状态条：实时显示命中建筑物数，可一键清除 -->
+<div class="filter-bar" id="filterBar">
+  <span class="fb-dot"></span>
+  <span class="fb-txt">筛选命中 <b id="fbCnt">0</b> 个建筑物</span>
+  <button class="fb-clear" id="fbClear">清除筛选</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="lib/leaflet.js"></script>
+<script src="js/store.js"></script>
+<script src="js/io.js"></script>
+<script src="js/imgutil.js"></script>
+<script src="data.js"></script>
+<!-- 天地图 Token 配置：不同环境请替换对应的值 -->
+<script>
+  // v2.4.3 平台标识与发行通道（upgrade.js 据此做通道隔离：公开版只读 public 清单，内部版只读 internal）
+  window.__APP_ID__ = "shuili";
+  window.__APP_NAME__ = "水利工程一张图";
+  window.__BUILD_CHANNEL__ = "public";   // public=对外公开发行 | internal=内部版；打包脚本按需改写
+</script>
+<script src="platform_matrix.js"></script>
+<script src="js/kb.js"></script>
+<script src="js/ocr.js"></script>
+<script src="js/ai.js"></script>
+<!-- 加载密钥：先 config.local.js（本地真实值，若存在则覆盖），再 config.js（占位模板，已入库） -->
+<script src="secrets/config.local.js"></script>
+<script src="secrets/config.js"></script>
+<script src="js/app.js"></script>
+<!-- v2.4.3 升级数据导出/导入 + 跨版本兼容检查 + 网盘新版检测（必须在 app.js 之后：依赖其暴露的全局 helper） -->
+<script src="js/upgrade.js"></script>
+<!-- v2.4.3 图文笔记引擎：古建=游记 / 水利·感知=备忘录（必须在 upgrade.js 之后） -->
+<script src="js/journal.js"></script>
+</body>
+</html>
