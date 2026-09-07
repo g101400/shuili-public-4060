@@ -126,6 +126,7 @@
     let fullPrompt = prompt;
     if (kbc) fullPrompt = "【本地知识库参考】\n" + kbc + "\n\n---\n\n" + fullPrompt;
     if (memc) fullPrompt = "【自我学习记忆·Hermes】\n" + memc + "\n\n---\n\n" + fullPrompt;
+    window.__lastAIPrompt = fullPrompt;   // v2.4.8：供「查看提示词」回显
     const s = loadSettings();
     const order = resolveOrder(s);
     let lastErr;
@@ -258,6 +259,36 @@
     render();
   }
 
+
+  // ---------- v2.4.8 知识库智能化：存疑标注 + 反向查询 + 提示词可视化 ----------
+  async function kbMarkDoubt(title, content) {
+    if (!window.KB || !window.KB.markDoubt) { toast("知识库未启用"); return; }
+    try {
+      await window.KB.markDoubt(title || "未命名存疑", String(content || "").slice(0, 800), { from: "ai" });
+      let rel = [];
+      try { rel = (window.KB.reverseQuery ? await window.KB.reverseQuery(String(content || ""), 5) : []); } catch (e) { rel = []; }
+      const rows = rel.length ? rel.map(function (r) {
+        return '<div class="hist-item"><div class="hist-q">' + esc2(r.title || r.id) + '</div><div class="hint">' + esc2(String(r.chunk || "").slice(0, 160)) + '</div></div>';
+      }).join("") : '<div class="hint">暂无相关知识条目（先导入资料，反向查询会更准）</div>';
+      openModal("已标记存疑 · 相关知识", '<div class="hint">该内容已存入知识库（标签：存疑 / 待核实）。以下是知识库中最相关的条目：</div>' + rows,
+        '<button class="btn primary" id="dkClose">关闭</button>');
+      el("dkClose").onclick = closeModal;
+      toast("已标记为存疑，可在「存疑与反向查询」中查看");
+    } catch (e) { toast("存疑保存失败：" + e.message); }
+  }
+  function kbShowPrompt() {
+    const p = window.__lastAIPrompt || "";
+    openModal("本次提示词（已注入知识库）",
+      '<div class="hint">下面是本次实际发送给大模型的完整提示词（含知识库片段与长期记忆），可复制后自行投喂其他模型。</div>' +
+      '<textarea id="kbtP" class="inp" rows="14" style="width:100%">' + esc2(p) + '</textarea>',
+      '<button class="btn ghost" id="kbtClose">关闭</button><button class="btn primary" id="kbtCopy">复制提示词</button>');
+    el("kbtClose").onclick = closeModal;
+    el("kbtCopy").onclick = function () {
+      try { if (navigator.clipboard) navigator.clipboard.writeText(el("kbtP").value); } catch (e) {}
+      toast("已复制提示词");
+    };
+  }
+
   // ---------- 智能查询 ----------
   // 需求①：联网在线查询开关（仅内部台账域 水利/感知 显示，默认本地查询）
   const ONLINE_KEY = "ai_online_v1";
@@ -342,10 +373,13 @@
     const renderActions = (txt) => {
       const box = document.getElementById("aiActions");
       if (!box) return;
-      let h = '<button class="btn ghost" id="aiHist">查看历史</button>';
+      let h = '<button class="btn ghost" id="aiHist">查看历史</button>' + '<button class="btn ghost" id="aiPrompt">查看提示词</button>';
+      if (window.KB && window.KB.markDoubt) h += '<button class="btn ghost" id="aiDoubt">标为存疑</button>';
       if (window.KB) h += '<button class="btn primary" id="aiSaveKB">保存到知识库</button>';
       box.innerHTML = h;
       el("aiHist").onclick = () => openHistory(AI.domain);
+      const pbtn = document.getElementById("aiPrompt"); if (pbtn) pbtn.onclick = () => kbShowPrompt();
+      const dbtn = document.getElementById("aiDoubt"); if (dbtn) dbtn.onclick = () => kbMarkDoubt(dm.recName(rec), txt);
       if (window.KB) el("aiSaveKB").onclick = () => saveQueryToKB(prompt, txt, dm, online);
     };
     const doQuery = async () => {
