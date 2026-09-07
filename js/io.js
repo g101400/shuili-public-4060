@@ -238,7 +238,7 @@
   function paramText(p) {
     const ks = Object.keys(p || {});
     if (!ks.length) return "";
-    return ks.map((k) => `${k} : ${p[k]}`).join(" | ");
+    return ks.map((k) => `${k} : ${p[k]}`).join("|\n");
   }
   function recordToPlacemark(r) {
     const params = r.params || {};
@@ -250,11 +250,11 @@
     // 照片：写入 zip 的 files/ 下；description 用 <img> 引用（自兼容）；OvAttr/OvAttaItem 文本路径（奥维真实导出结构）
     const imgs = (r.photos || []).map((ph, i) => {
       const fn = `${r.id}_${i}.jpg`;
-      return `<img src="files/${fn}" alt="${escapeXml(ph.caption || "")}"/>`;
+      return `<img src="ovatta/${fn}" alt="${escapeXml(ph.caption || "")}"/>`;
     }).join("<br/>");
     const ovAttr = (r.photos || []).length
       ? `<OvAttr><OvIcon>1</OvIcon><OvIconNum>0</OvIconNum><OvAttaList>` +
-        (r.photos || []).map((ph, i) => `<OvAttaItem>files/${escapeXml(r.id)}_${i}.jpg</OvAttaItem>`).join("") +
+        (r.photos || []).map((ph, i) => `<OvAttaItem>ovatta/${escapeXml(r.id)}_${i}.jpg</OvAttaItem>`).join("") +
         `</OvAttaList></OvAttr>`
       : "";
     const desc = escapeXml(paramText(params) || r.description || "");
@@ -298,7 +298,7 @@ ${places}
       (r.photos || []).forEach((ph, i) => {
         if (ph.dataUrl && ph.dataUrl.startsWith("data:") && ph.dataUrl.includes(";base64,")) {
           const b64 = ph.dataUrl.split(",")[1];
-          files.push({ name: `files/${r.id}_${i}.jpg`, data: b64ToBytes(b64) });
+          files.push({ name: `ovatta/${r.id}_${i}.jpg`, data: b64ToBytes(b64) });
         }
       });
     }
@@ -306,9 +306,17 @@ ${places}
   }
 
   // ---------- 解析 KML -> 记录 ----------
+  // 奥维原装 ovkmz 的 doc.kml 常带 UTF-8 BOM：DOMParser 遇开头 \uFEFF 会直接 parsererror，
+  // 表现为 deb 端「导入失败，kml格式无法解析（xml语法错误）」。故解析前统一剥离 BOM 与前置空白。
+  function stripBom(t) { return String(t == null ? "" : t).replace(/^\uFEFF/, "").replace(/^\s+/, ""); }
   function parseKmlToRecords(kmlText) {
-    const xml = new DOMParser().parseFromString(kmlText, "application/xml");
-    if (xml.getElementsByTagName("parsererror").length) throw new Error("KML 解析失败");
+    const clean = stripBom(kmlText);
+    let xml = new DOMParser().parseFromString(clean, "application/xml");
+    if (xml.getElementsByTagName("parsererror").length) {
+      // 兜底：剔除非法 XML 控制字符后重试（奥维偶发混入 \x0B/\x0C 等）
+      xml = new DOMParser().parseFromString(clean.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ""), "application/xml");
+      if (xml.getElementsByTagName("parsererror").length) throw new Error("KML 解析失败（XML 语法错误）");
+    }
     const pms = xml.getElementsByTagName("Placemark");
     const out = [];
     for (const pm of pms) {
@@ -394,20 +402,33 @@ ${places}
     const kmlText = strFromUtf8(files[kmlName] || new Uint8Array(0));
     const recs = parseKmlToRecords(kmlText);
     // 收集 zip 内所有图片（按全路径与 basename 双索引），兼容奥维不规则命名
+    // 路径归一：反斜杠→正斜杠、去掉 ./ 前缀、去 URL 编码，避免安卓解压器命名差异导致查表落空
+    const normPath = (p) => {
+      let s = String(p || "").replace(/\\/g, "/").replace(/^\.\//, "").trim();
+      try { if (/%[0-9A-Fa-f]{2}/.test(s)) s = decodeURIComponent(s); } catch (e) { }
+      return s;
+    };
     const byFull = {}, byName = {};
     for (const name of Object.keys(files)) {
       if (/\.(jpe?g|png|gif|bmp|webp)$/i.test(name)) {
-        byFull[name] = files[name];
-        const bn = name.split("/").pop();
+        const np = normPath(name);
+        byFull[np] = files[name];
+        byFull[np.toLowerCase()] = files[name];
+        const bn = np.split("/").pop();
         (byName[bn] = byName[bn] || []).push(files[name]);
+        (byName[bn.toLowerCase()] = byName[bn.toLowerCase()] || []).push(files[name]);
       }
     }
     const resolveImg = (ref) => {
       if (!ref) return null;
-      if (byFull[ref]) return byFull[ref];
-      if (byFull["files/" + ref]) return byFull["files/" + ref];
-      const bn = ref.split("/").pop();
+      const r0 = normPath(ref);
+      // 全路径 > files/ 前缀 > 归一后 basename > 大小写不敏感 basename
+      if (byFull[r0]) return byFull[r0];
+      if (byFull[r0.toLowerCase()]) return byFull[r0.toLowerCase()];
+      if (byFull["files/" + r0]) return byFull["files/" + r0];
+      let bn = r0.split("/").pop();
       if (byName[bn] && byName[bn].length) return byName[bn][0];
+      if (byName[bn.toLowerCase()] && byName[bn.toLowerCase()].length) return byName[bn.toLowerCase()][0];
       return null;
     };
     // 还原照片：奥维/本APP 引用路径都能解析（全路径 > files/前缀 > basename 兜底）
