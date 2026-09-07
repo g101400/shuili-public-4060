@@ -536,8 +536,48 @@ ${places}
     return "\uFEFF" + lines.join("\n");
   }
 
+  // ---------- v2.4.8：导出路径（文件夹 + 文件名），所有导出菜单共用 ----------
+  var LS_EDIR = "yzt_export_dir_v1";
+  var LS_EASK = "yzt_export_ask_v1";
+  function exportDir() { try { return localStorage.getItem(LS_EDIR) || ""; } catch (e) { return ""; } }
+  function setExportDir(d) { try { localStorage.setItem(LS_EDIR, d || ""); } catch (e) {} }
+  function exportAsk() { try { return localStorage.getItem(LS_EASK) !== "0"; } catch (e) { return true; } }
+  function setExportAsk(v) { try { localStorage.setItem(LS_EASK, v ? "1" : "0"); } catch (e) {} }
+  function joinExportPath(dir, name) {
+    var d = String(dir || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    var n = String(name || "").replace(/\\/g, "/").replace(/^\.\//, "");
+    return d ? d + "/" + n : n;
+  }
+  var _askOpen = false;   // 同一批导出（如照片批量）只问一次，后续沿用
+  // 设置子菜单「导出文件位置」：预配置默认文件夹与是否每次询问
+  function openExportPathSettings() {
+    var g = window;
+    if (typeof g.openModal !== "function") { if (g.alert) g.alert("主程序未就绪"); return; }
+    var html = '<div class="hint">设置导出文件的<b>默认文件夹</b>与<b>是否每次导出前询问文件名</b>。'
+      + '所有导出菜单（照片 / CSV / KMZ / 知识库 / 备忘录 / 升级备份…）共用此设置。</div>'
+      + '<div class="field"><label>默认文件夹（留空=系统下载目录；支持多级，如 一张图导出/2026）</label>'
+      + '<input id="epDir" class="inp" value="' + exportDir().replace(/"/g, "&quot;") + '" placeholder="例如：一张图导出"></div>'
+      + '<div class="field"><label>文件名规则</label>'
+      + '<input id="epName" class="inp" value="默认按各导出功能给出（如 知识库2026-09-07.md）" disabled></div>'
+      + '<div class="field"><label class="chip" style="cursor:pointer"><input type="checkbox" id="epAsk"'
+      + (exportAsk() ? " checked" : "") + ' style="vertical-align:-2px"> 每次导出前询问文件夹与文件名</label></div>'
+      + '<div class="hint">提示：安卓端询问对话框里的文件夹会传给原生保存（SAF）；Win/UOS/浏览器端作为下载子目录。</div>';
+    g.openModal("导出文件位置", html,
+      '<button class="btn ghost" id="epCancel">取消</button><button class="btn primary" id="epSave">保存</button>');
+    var c = g.document.getElementById("epCancel"); if (c) c.onclick = function () { g.closeModal(); };
+    var s = g.document.getElementById("epSave");
+    if (s) s.onclick = function () {
+      var d = (g.document.getElementById("epDir") || {}).value || "";
+      var a = g.document.getElementById("epAsk");
+      setExportDir(d.trim()); setExportAsk(a ? a.checked : true);
+      g.closeModal(); if (typeof g.toast === "function") g.toast("已保存导出位置设置");
+    };
+  }
+  if (global.__EXT_ACTS__) { } else { global.__EXT_ACTS__ = {}; }
+  global.__EXT_ACTS__.exportPath = openExportPathSettings;
+
   // ---------- 下载 ----------
-  function downloadBytes(filename, bytes, mime) {
+  function saveBytesNow(filename, bytes, mime) {
     // APK：经原生 SAF 选择器保存（用户可自定义目录，默认文档/下载）；浏览器/PWA 走标准下载
     // 关键修复：整包 base64 可能远超 Binder 1MB 事务上限 → 单次 JSInterface 调用会 TransactionTooLarge → 写入 0 字节。
     // 改为分块（exportStart/Append/Commit）累积，彻底避开 Binder 限制；写完由原生回调 APP.onExportResult 决定成败提示。
@@ -565,6 +605,41 @@ ${places}
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  // v2.4.8：导出前询问文件夹 + 文件名（同一批导出只问一次，后续沿用）
+  function downloadBytes(filename, bytes, mime) {
+    var dir = exportDir();
+    var full = joinExportPath(dir, filename);
+    var g = window;
+    if (!exportAsk() || _askOpen || typeof g.openModal !== "function") { saveBytesNow(full, bytes, mime); return; }
+    _askOpen = true;
+    var parts = String(full).split("/");
+    var defName = parts.pop() || "";
+    var defDir = parts.join("/");
+    var html = '<div class="hint">确认导出位置与文件名（同一批后续文件将沿用此文件夹）。</div>'
+      + '<div class="field"><label>文件夹（留空=系统下载目录）</label>'
+      + '<input id="dlDir" class="inp" value="' + defDir.replace(/"/g, "&quot;") + '" placeholder="例如：一张图导出/知识库"></div>'
+      + '<div class="field"><label>文件名</label>'
+      + '<input id="dlName" class="inp" value="' + defName.replace(/"/g, "&quot;") + '"></div>';
+    var done = function (ok) {
+      _askOpen = false;
+      if (!ok) { if (typeof g.toast === "function") g.toast("已取消导出"); return; }
+      var dEl = g.document.getElementById("dlDir"), nEl = g.document.getElementById("dlName");
+      var d = ((dEl && dEl.value) || "").trim();
+      var n = ((nEl && nEl.value) || "").trim() || defName;
+      setExportDir(d);
+      saveBytesNow(joinExportPath(d, n), bytes, mime);
+      if (typeof g.toast === "function") g.toast("已导出：" + joinExportPath(d, n));
+    };
+    try {
+      g.openModal("导出到", html,
+        '<button class="btn ghost" id="dlCancel">取消</button><button class="btn primary" id="dlOk">导出</button>');
+      var cc = g.document.getElementById("dlCancel");
+      if (cc) cc.onclick = function () { g.closeModal(); done(false); };
+      var oo = g.document.getElementById("dlOk");
+      if (oo) oo.onclick = function () { g.closeModal(); done(true); };
+    } catch (e) { _askOpen = false; saveBytesNow(full, bytes, mime); }
   }
   function downloadText(filename, text, mime) {
     downloadBytes(filename, utf8(text), mime || "text/plain;charset=utf-8");
@@ -911,7 +986,7 @@ ${places}
   global.IO = {
     escapeXml, crc32, zipStore, unzip, unzipStream, unzipCount, buildKML, buildCsv, buildChaohe, recordsToKmzBytes,
     parseKmlToRecords, parseGpxToRecords, parseJsonToRecords, importKmzBuffer, parseCsvToRecords,
-    downloadBytes, downloadText, genId, bytesToB64, b64ToBytes, utf8,
+    downloadBytes, downloadText, openExportPathSettings, exportDir, setExportDir, exportAsk, setExportAsk, genId, bytesToB64, b64ToBytes, utf8,
     sha256Hex, // 内容去重哈希（v1.8.0 定义；曾漏导出导致导入 ovkmz 报「IO.sha256Hex is not a function」）
     sha256: { hex: sha256Hex }, // 兼容别名（对象式调用 io.sha256.hex() 也可用）
     csvOf: buildCsv, chaoheOf: buildChaohe,
