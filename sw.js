@@ -8,7 +8,8 @@ const PRECACHE = [
   "./js/store.js",
   "./js/io.js",
   "./js/app.js",
-  "./data.json",
+  "./data.js",
+  "./kb_skeleton.json",
   "./lib/leaflet.css",
   "./lib/leaflet.js",
   "./lib/images/marker-icon.png",
@@ -19,7 +20,12 @@ const PRECACHE = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
+  // 逐个缓存并忽略失败项：任一文件缺失不再导致整个 SW 安装失败（离线仍能降级）
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.all(PRECACHE.map((u) => c.add(u).catch(() => null))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
