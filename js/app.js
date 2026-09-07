@@ -326,7 +326,7 @@
   function tripleTapMenu() {
     closeModal();
     if (el("listbar").classList.contains("open")) el("listbar").classList.remove("open");
-    el("drawer").classList.add("open"); el("mask").classList.add("show");
+    el("drawer").classList.add("open"); el("mask").classList.add("show"); applyHiddenMenus(); applyHiddenMenus();
     toast("已打开主菜单");
   }
 
@@ -3392,13 +3392,13 @@ function popupHtml(r) {
   function bindUI() {
     // 版本变更菜单副标题随全局版本号同步（避免硬编码漂移）
     if (el("changelogSub")) el("changelogSub").textContent = "v1.8.0 → " + APP_VER;
-    el("btnMenu").onclick = () => { el("drawer").classList.add("open"); el("mask").classList.add("show"); };
+    el("btnMenu").onclick = () => { el("drawer").classList.add("open"); el("mask").classList.add("show"); applyHiddenMenus(); applyHiddenMenus(); };
     el("btnExit").onclick = () => {
       const closed = APP.back();
       if (!closed) { toast("已是最外层页面 · 三击地图空白处可唤起主菜单"); }
     };
 
-    el("fabMenu").onclick = () => { el("drawer").classList.add("open"); el("mask").classList.add("show"); };
+    el("fabMenu").onclick = () => { el("drawer").classList.add("open"); el("mask").classList.add("show"); applyHiddenMenus(); applyHiddenMenus(); };
     el("drawerClose").onclick = closeDrawer; el("mask").onclick = closeDrawer;
     el("listClose").onclick = () => el("listbar").classList.remove("open");
     el("btnList").onclick = () => el("listbar").classList.toggle("open");
@@ -3436,6 +3436,7 @@ function popupHtml(r) {
     });
     document.querySelectorAll(".menu-btn").forEach(bindMenuBtn); // v2.4：绑定提取为独立函数（快捷常用动态按钮复用）
     renderQuickFavs(); // v2.4：渲染快捷常用
+    applyHiddenMenus(); // v2.4.8：应用菜单隐藏设置
     // 三击地图任意处 → 强制恢复主菜单（测距/选点模式不触发，避免误操）
     let _taps = 0, _tapT = 0;
     $("#map").addEventListener("click", () => {
@@ -3508,7 +3509,7 @@ function popupHtml(r) {
         kbImportFile, kbExport, kbImportBackup, kbQuery: openKBQuery, kbImportUrl, aiHistory: () => AI.openHistory(),
         // v2.4 新增管理入口
         orgManager: () => openOrgManager(), btypeManager: () => openBtypeManager(), quickFavSettings: openQuickFavSettings,
-        tiandituKey: openTiandituKeySettings, errlog: openErrLog };
+        tiandituKey: openTiandituKeySettings, errlog: openErrLog, menuRestoreHidden: openMenuRestoreHidden, menuHiddenList: openHiddenList };
       function cleanImportCache() {
         if (window.AndroidBridge && window.AndroidBridge.cleanInbox) { window.AndroidBridge.cleanInbox(); toast("已清理导入临时缓存"); }
         else toast("当前环境（网页版）无导入缓存可清理");
@@ -3520,8 +3521,97 @@ function popupHtml(r) {
       else toast("该功能未装载（" + act + "），请检查安装包是否完整");   // fail-loud：不再静默无反应
     };
     // 方式1：右键/长按菜单项 → 加入/移出快捷常用（移动端 WebView 长按同样触发 contextmenu）
-    b.oncontextmenu = (e) => { e.preventDefault(); toggleQuickFav(b.dataset.act); };
+    b.oncontextmenu = (e) => { e.preventDefault(); openMenuLongPress(b); };
   }
+  // ---------- v2.4.8：菜单隐藏（不常用菜单可隐藏，界面更简洁；设置中可恢复）----------
+  const HM_KEY = (window.__APP_ID__ || "app") + "_hiddenmenus_v1";
+  // 保护项：恢复入口与常用设置不允许隐藏，避免用户把自己锁死
+  const HM_PROTECT = ["menuRestoreHidden", "menuHiddenList", "quickFavSettings", "errlog", "help", "about", "changelog"];
+  function loadHiddenMenus() {
+    try {
+      const a = JSON.parse(localStorage.getItem(HM_KEY) || "[]");
+      return Array.isArray(a) ? a.filter((x) => typeof x === "string" && HM_PROTECT.indexOf(x) < 0) : [];
+    } catch (e) { return []; }
+  }
+  function saveHiddenMenus(a) { try { localStorage.setItem(HM_KEY, JSON.stringify(a)); } catch (e) {} }
+  function applyHiddenMenus() {
+    const hm = loadHiddenMenus();
+    const root = (document.getElementById && document.getElementById("drawer")) || document;
+    const btns = root.querySelectorAll(".menu-btn");
+    for (let i = 0; i < btns.length; i++) {
+      const act = btns[i].dataset.act;
+      btns[i].style.display = (act && hm.indexOf(act) >= 0) ? "none" : "";
+    }
+    // 整组被隐藏完时连分组标题一起收起，避免留下空标题
+    const subs = root.querySelectorAll(".msub");
+    for (let i = 0; i < subs.length; i++) {
+      const vis = Array.prototype.filter.call(subs[i].querySelectorAll(".menu-btn"), (b) => b.style.display !== "none");
+      const grp = subs[i].previousElementSibling;
+      if (grp && grp.classList && grp.classList.contains("mgroup")) grp.style.display = vis.length ? "" : "none";
+    }
+  }
+  function hideMenuAct(act) {
+    if (!act) return;
+    if (HM_PROTECT.indexOf(act) >= 0) { toast("该菜单是恢复入口，不允许隐藏"); return; }
+    const cur = loadHiddenMenus();
+    if (cur.indexOf(act) < 0) cur.push(act);
+    try { saveQuickFavs(loadQuickFavs().filter((x) => x !== act)); } catch (e) {}   // 同步移出快捷常用，避免残留入口
+    saveHiddenMenus(cur); applyHiddenMenus();
+    try { renderQuickFavs(); } catch (e) {}
+    toast("已隐藏该菜单，可在「设置 → 恢复隐藏子菜单」中恢复");
+  }
+  function restoreMenuAct(act) {
+    saveHiddenMenus(loadHiddenMenus().filter((x) => x !== act));
+    applyHiddenMenus(); toast("已恢复显示该菜单");
+  }
+  // 长按/右键菜单项：保留原有「加入/移出快捷常用」，新增「隐藏此菜单」
+  function openMenuLongPress(b) {
+    const act = b ? b.dataset.act : "";
+    if (!act) return;
+    if (HM_PROTECT.indexOf(act) >= 0) { toggleQuickFav(act); return; }
+    const isFav = loadQuickFavs().indexOf(act) >= 0;
+    const title = btnMenuTitle(b) || act;
+    openModal("菜单操作：" + title,
+      '<div class="hint">选择对该菜单的操作。<b>隐藏不会删除功能</b>，随时可在「设置」中恢复显示。</div>',
+      '<button class="btn ghost" id="hmFav">' + (isFav ? "\u2b50 \u79fb\u51fa\u5feb\u6377\u5e38\u7528" : "\u2b50 \u52a0\u5165\u5feb\u6377\u5e38\u7528") + '</button>'
+      + '<button class="btn ghost" id="hmHide">\U0001f6ab \u9690\u85cf\u6b64\u83dc\u5355</button>'
+      + '<button class="btn primary" id="hmCancel">\u53d6\u6d88</button>');
+    const f = el("hmFav"); if (f) f.onclick = () => { closeModal(); toggleQuickFav(act); };
+    const h = el("hmHide"); if (h) h.onclick = () => { closeModal(); hideMenuAct(act); };
+    const c = el("hmCancel"); if (c) c.onclick = closeModal;
+  }
+  // 设置子菜单①：恢复隐藏子菜单（一键全部显示）
+  function openMenuRestoreHidden() {
+    const hm = loadHiddenMenus();
+    if (!hm.length) { toast("当前没有被隐藏的菜单"); return; }
+    saveHiddenMenus([]); applyHiddenMenus(); toast("已恢复全部 " + hm.length + " 个隐藏菜单");
+  }
+  // 设置子菜单②：隐藏子菜单列表（点击任意一项即恢复）
+  function openHiddenList() {
+    const hm = loadHiddenMenus();
+    if (!hm.length) {
+      openModal("\u9690\u85cf\u5b50\u83dc\u5355\u5217\u8868", '<div class="hint">\u5f53\u524d\u6ca1\u6709\u88ab\u9690\u85cf\u7684\u83dc\u5355\u3002</div>',
+        '<button class="btn primary" onclick="APP.close()">\u5173\u95ed</button>');
+      return;
+    }
+    const rows = hm.map((act) => {
+      const src = document.querySelector('.drawer .menu-btn[data-act="' + act + '"]');
+      const ico = src && src.querySelector(".ico") ? src.querySelector(".ico").textContent : "\U0001f6ab";
+      return '<button class="menu-btn" data-hm="' + esc(act) + '"><span class="ico">' + ico + '</span><span>'
+        + esc(btnMenuTitle(src) || act) + '<span class="sub">\u70b9\u51fb\u6062\u590d\u663e\u793a</span></span></button>';
+    }).join("");
+    openModal("\u9690\u85cf\u5b50\u83dc\u5355\uff08" + hm.length + " \u4e2a\uff09",
+      '<div class="hint">\u70b9\u51fb\u4efb\u610f\u4e00\u9879\u5373\u53ef\u6062\u590d\u663e\u793a\uff1b\u4e5f\u53ef\u4e00\u952e\u5168\u90e8\u6062\u590d\u3002</div>'
+      + '<div style="margin-top:8px">' + rows + '</div>',
+      '<button class="btn ghost" id="hmAll">\u5168\u90e8\u6062\u590d</button>'
+      + '<button class="btn primary" onclick="APP.close()">\u5173\u95ed</button>');
+    const items = document.querySelectorAll("#modalBody [data-hm]");
+    for (let i = 0; i < items.length; i++) {
+      items[i].onclick = (function (a) { return function () { closeModal(); restoreMenuAct(a); openHiddenList(); }; })(items[i].getAttribute("data-hm"));
+    }
+    const a = el("hmAll"); if (a) a.onclick = () => { closeModal(); openMenuRestoreHidden(); };
+  }
+
   // ---------- 快捷常用（v2.4）：用户自选高频功能，置于查询/筛选之下首位；原子菜单保留 ----------
   const QF_KEY = "shuili_quickfavs_v1";
   const QF_EXCLUDE = ["search", "filter"]; // 已置顶，不重复
@@ -4084,14 +4174,14 @@ function popupHtml(r) {
       busy("正在导出知识库…");
       try {
         const out = await KB.exportAs(fmt);
-        const blob = new Blob([out.data], { type: out.mime });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = out.name;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(a.href);
+        // v2.4.8：默认文件名「知识库+日期.md/.txt/.html/.zip」，并走统一导出路径（可自定义文件夹/文件名）
+        const d = new Date();
+        const stamp = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+        const defName = "知识库" + stamp + "." + fmt;
+        if (typeof out.data === "string") IO.downloadText(defName, out.data, out.mime);
+        else IO.downloadBytes(defName, out.data, out.mime);
         kbLog("导出知识库", { fmt, size: out.data.length || out.data.byteLength, entries: n });
-        toast("知识库已导出：" + out.name);
+        toast("知识库已导出：" + defName);
       } catch (e) { toast("导出失败：" + e.message); }
       finally { busy(false); }
     };
