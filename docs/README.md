@@ -93,8 +93,8 @@ bash C:/android_build/ShuiLiApp/build_apk.sh
 ---
 
 ## 6. 关键信息
-- **天地图浏览器端令牌**（底图，`index.html`/`app.js` 中 `TIANDITU`）：`61691764ff68bf341c4c9c4770b24b5f`（按环境替换）。
-- **天地图服务端令牌**（瓦片下载脚本用）：`d258e3622cb1755b59a59e4b7ac6d96e`。
+- **天地图浏览器端令牌**（底图，`index.html`/`app.js` 中 `TIANDITU`）：`REDACTED_BROWSER_TOKEN`（按环境替换）。
+- **天地图服务端令牌**（瓦片下载脚本用）：`REDACTED_SERVER_TOKEN`。
 - **坐标**：WGS84 / CGCS2000，与奥维采集一致。
 - **作者署名**：科技推广中心。
 
