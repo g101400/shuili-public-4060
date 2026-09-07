@@ -846,6 +846,223 @@
     if (b) b.onclick = function () { global.closeModal(); openExport(); };
   }
 
+
+  // ================= v2.4.8：GitHub 升级通道 =================
+  // 通道隔离与百度网盘双通道保持一致：
+  //   内部版 → *-internal-4060（私有仓库，release 含完整数据包）
+  //   公开版 → *-public-4060（公开仓库，release 为脱敏构建）
+  //   古建   → gujian4060（单通道，数据本身公开）
+  var GH_REPO_MAP = {
+    shuili: { public: "g101400/shuili-public-4060", internal: "g101400/shuili-internal-4060" },
+    shipin: { public: "g101400/shipin-public-4060", internal: "g101400/shipin-internal-4060" },
+    gujian: { public: "g101400/gujian4060", internal: "g101400/gujian4060" }
+  };
+  var LS_GH_REPO = "yzt_gh_repo_" + CHANNEL;          // 可手工覆盖仓库（高级/自建镜像）
+  var LS_GH_AUTO = "yzt_gh_autocheck_" + CHANNEL;     // GitHub 通道自动检测（默认开）
+  var LS_GH_SEEN = "yzt_gh_seenver_" + CHANNEL;       // 已弹过的版本，避免重复打扰
+  var LS_GH_TOKEN = "yzt_gh_token_" + CHANNEL;        // v2.4.8：私有仓库只读 Token（仅本机保存）
+
+  function ghRepo() {
+    try {
+      var v = localStorage.getItem(LS_GH_REPO) || "";
+      if (v && v.trim()) return v.trim();
+    } catch (e) {}
+    var m = GH_REPO_MAP[APP_ID];
+    return (m && m[CHANNEL]) || "";
+  }
+  function setGhRepo(v) { try { localStorage.setItem(LS_GH_REPO, v || ""); } catch (e) {} }
+  function ghAutoOn() { try { return localStorage.getItem(LS_GH_AUTO) !== "0"; } catch (e) { return true; } }
+  function setGhAuto(on) { try { localStorage.setItem(LS_GH_AUTO, on ? "1" : "0"); } catch (e) {} }
+  function ghToken() { try { return localStorage.getItem(LS_GH_TOKEN) || ""; } catch (e) { return ""; } }
+  function setGhToken(v) { try { localStorage.setItem(LS_GH_TOKEN, v || ""); } catch (e) {} }
+  function ghSeenVer() { try { return localStorage.getItem(LS_GH_SEEN) || ""; } catch (e) { return ""; } }
+  function setGhSeenVer(v) { try { localStorage.setItem(LS_GH_SEEN, v || ""); } catch (e) {} }
+
+  // 当前运行平台 → 决定该下哪个产物
+  function curPlatform() {
+    try {
+      var ua = String((global.navigator && navigator.userAgent) || "");
+      if (global.AndroidBridge || /Android/i.test(ua)) return "android";
+      if (global.__UOS__ || /UOS|Deepin|UnionTech/i.test(ua)) return "uos";
+      if (global.__WIN11__ || (global.process && global.process.versions && global.process.versions.electron)) return "win";
+      if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
+      if (/Linux/i.test(ua)) return "uos";
+    } catch (e) {}
+    return "web";
+  }
+  var PLAT_CN = { android: "安卓 APK", win: "Windows（exe/msi）", uos: "统信 UOS（deb）", ios: "苹果（PWA）", web: "网页/PWA" };
+  var PLAT_EXT = {
+    android: /\.apk$/i, win: /\.(exe|msi)$/i, uos: /\.(deb)$/i, ios: /\.(zip|html)$/i, web: /\.(zip)$/i
+  };
+  function pickAsset(assets, plat) {
+    var re = PLAT_EXT[plat] || PLAT_EXT.android;
+    var hit = (assets || []).filter(function (a) { return re.test(a.name || ""); });
+    if (!hit.length) return null;
+    hit.sort(function (a, b) { return (b.size || 0) - (a.size || 0); });
+    return hit[0];
+  }
+
+  // 查询 https://api.github.com/repos/<repo>/releases/latest，映射为统一清单结构
+  async function fetchGitHubLatest(log) {
+    var repo = ghRepo();
+    if (!repo) throw new Error("未配置 GitHub 仓库（当前 APP=" + APP_ID + " 通道=" + CHANNEL + "）");
+    var url = "https://api.github.com/repos/" + repo + "/releases/latest";
+    if (log) log("正在检测 GitHub " + repo + " …");
+    var headers = { "Accept": "application/vnd.github+json" };
+    var tk = ghToken();
+    if (tk) headers["Authorization"] = "Bearer " + tk;
+    var r = await fetch(url, { cache: "no-store", headers: headers });
+    if (!r.ok) {
+      if (r.status === 404) throw new Error(tk
+        ? "HTTP 404：该仓库尚无发行版，或 Token 无此私有仓库读取权限"
+        : "HTTP 404：仓库不存在 / 尚无发行版；若为私有仓库（内部版），请先在下方填写只读 Token");
+      if (r.status === 401 || r.status === 403) throw new Error("HTTP " + r.status + "：Token 无效或已被限流");
+      throw new Error("HTTP " + r.status);
+    }
+    var d = await r.json();
+    var tag = String(d.tag_name || d.name || "");
+    if (!tag) throw new Error("该仓库还没有发布版本（release）");
+    var assets = (d.assets || []).map(function (a) {
+      return { name: a.name, size: a.size || 0, url: a.browser_download_url || "", count: a.download_count || 0 };
+    });
+    var plat = curPlatform();
+    var pick = pickAsset(assets, plat);
+    return {
+      version: tag,
+      date: String(d.published_at || d.created_at || "").slice(0, 10),
+      notes: String(d.body || "").split(/\r?\n/).map(function (x) { return x.replace(/^[-*]\s*/, "").trim(); })
+        .filter(function (x) { return x; }).slice(0, 12),
+      channel: CHANNEL, app: APP_ID, repo: repo,
+      html_url: d.html_url || ("https://github.com/" + repo + "/releases"),
+      assets: assets, platform: plat,
+      download: pick ? pick.url : "", filename: pick ? pick.name : ""
+    };
+  }
+
+  function renderGhResult(m) {
+    var cur = appVer();
+    var cmp = verCmp(m.version, cur);
+    var plat = m.platform || curPlatform();
+    var head = cmp > 0
+      ? '<span style="color:#7ddc7d">\u2728 GitHub \u6709\u65b0\u7248 <b>' + esc(m.version) + '</b></span>'
+        + '<span style="color:#9fb3c8"> \uff08\u5f53\u524d ' + esc(cur) + '\uff09</span>'
+      : '<span style="color:#7ddc7d">\u2713 \u5df2\u662f\u6700\u65b0\u7248 <b>' + esc(cur) + '</b></span>'
+        + '<span style="color:#9fb3c8"> \uff08GitHub \u6700\u65b0 ' + esc(m.version) + '\uff09</span>';
+    var html = head + '<div style="margin-top:6px;color:#9fb3c8;font-size:12px">\u4ed3\u5e93 <code>' + esc(m.repo)
+      + '</code> \u00b7 \u53d1\u5e03\u65e5\u671f ' + esc(m.date || "-")
+      + ' \u00b7 \u5f53\u524d\u5e73\u53f0 <b>' + esc(PLAT_CN[plat] || plat) + '</b></div>';
+    if (m.notes && m.notes.length) {
+      html += '<ul style="margin:6px 0 0 18px">' + m.notes.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join("") + '</ul>';
+    }
+    if (m.assets && m.assets.length) {
+      html += '<div style="margin-top:8px"><b>\u53ef\u4e0b\u8f7d\u4ea7\u7269</b>'
+        + '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">';
+      m.assets.forEach(function (a, i) {
+        var hot = PLAT_EXT[plat] && PLAT_EXT[plat].test(a.name || "");
+        html += '<button class="btn ghost gh-dl" data-i="' + i + '" style="padding:4px 10px;font-size:12px'
+          + (hot ? ";border-color:#2f81f7;color:#2f81f7" : "") + '">'
+          + (hot ? "\u2b07\ufe0f " : "") + esc(a.name) + ' <span style="opacity:.65">' + esc(sizeText(a.size)) + '</span></button>';
+      });
+      html += '</div></div>';
+    } else {
+      html += '<div style="margin-top:8px;color:#ffb454">\u26a0 \u8be5\u53d1\u884c\u7248\u6682\u65e0\u9644\u4ef6\uff0c\u8bf7\u70b9\u300c\u6253\u5f00\u53d1\u884c\u9875\u300d\u67e5\u770b\u3002</div>';
+    }
+    if (cmp > 0) {
+      html += '<div style="margin-top:8px"><b>\u5347\u7ea7\u524d\u52a1\u5fc5\u5148\u70b9\u300c\ud83d\udce4 \u5148\u5907\u4efd\u6570\u636e\u300d\u5bfc\u51fa\u5347\u7ea7\u6570\u636e\u5305\u3002</b></div>';
+    }
+    return html;
+  }
+  function wireGhAssets(m) {
+    var btns = (global.document ? document.querySelectorAll(".gh-dl") : null) || [];
+    for (var i = 0; i < btns.length; i++) {
+      (function (b) {
+        b.onclick = function () {
+          var a = (m.assets || [])[+b.getAttribute("data-i")];
+          if (!a) return;
+          startDownload({ version: m.version, download: a.url, filename: a.name });
+        };
+      })(btns[i]);
+    }
+  }
+
+  // 设置菜单入口：「通过 GitHub 升级」
+  function openGithubUpgrade() {
+    var repo = ghRepo();
+    var plat = curPlatform();
+    var html = '<div class="hint">\u5f53\u524d\u7248\u672c <b>' + esc(appVer()) + '</b> \u00b7 \u53d1\u884c\u901a\u9053 <b>' + CHANNEL_CN
+      + '</b>\uff08' + CHANNEL + '\uff09\u3002</div>'
+      + '<div class="hint" style="margin-top:6px">\u901a\u9053\u9694\u79bb\u89c4\u5219\uff1a<b>\u5185\u90e8\u7248\u53ea\u67e5 <code>*-internal-4060</code>\uff08\u79c1\u6709\uff09\u3001'
+      + '\u516c\u5f00\u7248\u53ea\u67e5 <code>*-public-4060</code>\uff08\u516c\u5f00\uff09</b>\uff0c\u4e0e\u767e\u5ea6\u7f51\u76d8\u53cc\u901a\u9053\u4fdd\u6301\u4e00\u81f4\uff0c\u4e24\u6761\u7ebf\u4e92\u4e0d\u4ea4\u53c9\u3002</div>'
+      + '<div class="field"><label>GitHub \u4ed3\u5e93\uff08\u9ed8\u8ba4\u6309\u901a\u9053\u81ea\u52a8\u5339\u914d\uff0c\u53ef\u624b\u5de5\u8986\u76d6\uff09</label>'
+      + '<input id="ghRepo" class="inp" value="' + esc(repo) + '" placeholder="g101400/xxx-4060"></div>'
+      + '<div class="field"><label>GitHub 只读 Token（仅内部版私有仓库需要；公开版留空即可）</label>'
+      + '<input id="ghToken" class="inp" type="password" value="' + esc(ghToken()) + '" placeholder="ghp_… 或 github_pat_…（只读权限）"></div>'
+      + '<div class="field"><label class="chip" style="cursor:pointer"><input type="checkbox" id="ghAuto"'
+      + (ghAutoOn() ? " checked" : "") + ' style="vertical-align:-2px"> \u6bcf\u6b21\u542f\u52a8\u81ea\u52a8\u68c0\u6d4b GitHub \u65b0\u7248</label></div>'
+      + '<div class="hint" style="margin-top:4px;color:#9fb3c8">\u5f53\u524d\u5e73\u53f0\u8bc6\u522b\uff1a<b>' + esc(PLAT_CN[plat] || plat)
+      + '</b>\uff0c\u4f1a\u81ea\u52a8\u4e3a\u4f60\u6311\u9009\u5bf9\u5e94\u5b89\u88c5\u5305\uff08\u4e5f\u53ef\u624b\u70b9\u5176\u4ed6\u4ea7\u7269\uff09\u3002</div>'
+      + '<div class="hint" id="ghOut" style="margin-top:10px;padding:9px 12px;border:1px dashed var(--accent);border-radius:10px">\u5c1a\u672a\u68c0\u6d4b</div>';
+    global.openModal("\u901a\u8fc7 GitHub \u5347\u7ea7\uff08" + CHANNEL_CN + "\uff09", html,
+      '<button class="btn ghost" onclick="APP.close()">\u5173\u95ed</button>'
+      + '<button class="btn ghost" id="ghOpenRepo">\ud83d\udce6 \u6253\u5f00\u53d1\u884c\u9875</button>'
+      + '<button class="btn ghost" id="ghBackupFirst">\ud83d\udce4 \u5148\u5907\u4efd\u6570\u636e</button>'
+      + '<button class="btn primary" id="ghCheck">\ud83d\udd0d \u68c0\u6d4b\u65b0\u7248</button>');
+
+    var rep = E("ghRepo");
+    if (rep) rep.onchange = function () { setGhRepo(rep.value); };
+    var gt = E("ghToken");
+    if (gt) gt.onchange = function () { setGhToken(gt.value); T(gt.value ? "已保存 Token（仅存本机）" : "已清除 Token"); };
+    var ga = E("ghAuto");
+    if (ga) ga.onchange = function () { setGhAuto(ga.checked); T(ga.checked ? "已开启 GitHub 自动检测" : "已关闭 GitHub 自动检测"); };
+    E("ghBackupFirst").onclick = function () { global.closeModal(); openExport(); };
+    E("ghOpenRepo").onclick = function () {
+      var r = ghRepo();
+      try { global.open("https://github.com/" + r + "/releases", "_blank"); } catch (e) {}
+    };
+    E("ghCheck").onclick = async function () {
+      var out = E("ghOut");
+      var ri = E("ghRepo");
+      if (ri) setGhRepo(ri.value);
+      out.innerHTML = "正在检测…";
+      try {
+        var m = await fetchGitHubLatest(function (t) { out.innerHTML = esc(t); });
+        out.innerHTML = renderGhResult(m);
+        wireGhAssets(m);
+        if (verCmp(m.version, appVer()) > 0) setSkippedVer("");
+      } catch (e) {
+        out.innerHTML = '<span style="color:#ff6b6b">\u26d4 \u68c0\u6d4b\u5931\u8d25\uff1a' + esc(e && e.message ? e.message : String(e))
+          + '<br>\u5e38\u89c1\u539f\u56e0\uff1a\u65e0\u7f51\u7edc / \u8be5\u4ed3\u5e93\u8fd8\u6ca1\u6709\u53d1\u884c\u7248 / \u79c1\u6709\u4ed3\u5e93\u9700\u914d\u7f6e token\u3002'
+          + '<br>\u964d\u7ea7\u65b9\u6848\uff1a\u70b9\u300c\ud83d\udce6 \u6253\u5f00\u53d1\u884c\u9875\u300d\u624b\u5de5\u4e0b\u8f7d\uff0c\u6216\u6539\u7528\u767e\u5ea6\u7f51\u76d8\u5347\u7ea7\u3002</span>';
+      }
+    };
+  }
+
+  // 启动静默检测：有新版本且未弹过才弹窗
+  var _ghChecked = false;
+  async function autoCheckGithub(force) {
+    if (_ghChecked && !force) return;
+    _ghChecked = true;
+    if (!force && !ghAutoOn()) return;
+    if (!ghRepo()) return;
+    var m = null;
+    try { m = await fetchGitHubLatest(null); } catch (e) { return; }   // 静默失败，绝不打扰
+    if (!m || !m.version) return;
+    if (verCmp(m.version, appVer()) <= 0) return;
+    if (ghSeenVer() === String(m.version)) return;
+    if (typeof global.openModal !== "function") return;
+    setGhSeenVer(String(m.version));
+    var html = '<div class="hint">GitHub \u4ed3\u5e93 <code>' + esc(m.repo) + '</code> \u6709\u65b0\u7248 <b>' + esc(m.version)
+      + '</b>\uff08\u5f53\u524d ' + esc(appVer()) + '\uff09</div>'
+      + '<div style="margin-top:8px">' + renderGhResult(m) + '</div>';
+    global.openModal("\u53d1\u73b0\u65b0\u7248\u672c\uff08GitHub \u00b7 " + CHANNEL_CN + "\uff09", html,
+      '<button class="btn ghost" id="ghAutoBak">\ud83d\udce4 \u5148\u5907\u4efd\u6570\u636e</button>'
+      + '<button class="btn primary" onclick="APP.close()">\u77e5\u9053\u4e86</button>');
+    wireGhAssets(m);
+    var bk = E("ghAutoBak");
+    if (bk) bk.onclick = function () { global.closeModal(); openExport(); };
+    if (autoDlOn() && m.download) startDownload(m);
+  }
+
   // ---------- 对外接口 + 菜单自注册 ----------
   var Upgrade = {
     SCHEMA: SCHEMA, CHANNEL: CHANNEL, APP_ID: APP_ID,
@@ -856,7 +1073,12 @@
     defaultBackupName: defaultBackupName, defaultBackupDir: defaultBackupDir, BACKUP_EXT: BACKUP_EXT,
     joinPath: joinPath, baseName: baseName, backupAge: backupAge,
     // v2.4.7：一键检查 + 自动下载
-    checkNow: checkNow, startDownload: startDownload, autoDlOn: autoDlOn
+    checkNow: checkNow, startDownload: startDownload, autoDlOn: autoDlOn,
+    // v2.4.8：GitHub 升级通道
+    openGithubUpgrade: openGithubUpgrade, fetchGitHubLatest: fetchGitHubLatest,
+    autoCheckGithub: autoCheckGithub, ghRepo: ghRepo, setGhRepo: setGhRepo,
+    curPlatform: curPlatform, pickAsset: pickAsset, PLAT_CN: PLAT_CN,
+    ghToken: ghToken, setGhToken: setGhToken
   };
   global.Upgrade = Upgrade;
 
@@ -865,7 +1087,8 @@
   global.__EXT_ACTS__.swUpgrade = openUpgrade;
   global.__EXT_ACTS__.upExport = openExport;
   global.__EXT_ACTS__.upImport = openImport;
-  global.__EXT_ACTS__.swCheckUpdate = checkNow;   // v2.4.7：设置菜单「检查新版本」一键检测
+  global.__EXT_ACTS__.swCheckUpdate = checkNow;
+  global.__EXT_ACTS__.swGithubUpgrade = openGithubUpgrade;   // v2.4.8：设置菜单「通过 GitHub 升级」   // v2.4.7：设置菜单「检查新版本」一键检测
 
   // 启动检查：等 app.js 数据加载完（load() 内 render 后）再弹，避免抢在地图初始化前
   // v2.4.6：启动后先静默跑一次网盘新版检测（公开版/内部版同权），有新版才弹窗；失败一律静默不打扰
@@ -875,6 +1098,7 @@
         bootCheck().catch(function (e) { console.warn("[upgrade] bootCheck", e); });
         setTimeout(function () {
           autoCheckUpgrade(false).catch(function (e) { console.warn("[upgrade] autoCheck", e); });
+          setTimeout(function () { autoCheckGithub(false).catch(function (e) { console.warn("[upgrade] ghCheck", e); }); }, 800);
         }, 1500);
       }, 3000);
     };
