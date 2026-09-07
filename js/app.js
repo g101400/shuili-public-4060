@@ -155,7 +155,7 @@
   }
 
   // 全局版本号（单一事实来源：关于 / 版本变更 / 帮助 均引用此处，避免硬编码漂移）
-  const APP_VER = "v2.4.7";
+  const APP_VER = "v2.4.8";
 
   // ---------- 状态 ----------
   let BASE = [], DELTA = { added: [], updated: {}, deleted: [] }, records = [];
@@ -2964,6 +2964,7 @@ function popupHtml(r) {
   }
   // 版本变更：单一来源 APP_VER + 内置变更摘要（与文档同步维护）
   const CHANGELOG = [
+    ["v2.4.8", "2026-09-07", ["知识库智能化：新增「知识库模糊检索」——错字/缺字/语序不同也能命中（如「跌水闸」可命中「跌水节制闸」），结果带相关度百分比，可对任一条目直接反向查询或标为存疑", "新增「提示词生成」：问题 + 知识库最相关片段 + 长期记忆自动拼装成完整提示词，可复制自用或直接投喂大模型；AI 查询结果新增「查看提示词」按钮", "新增「AI 记忆（Hermes）」：查询/纠错/存疑自动沉淀为记忆并在提示词中引用，支持查看、按关键词检索、一键清空（不影响知识条目）", "新增「存疑与反向查询」：不确定的内容可打存疑标记（标签：存疑/待核实），系统用其内容反向检索知识库给出最相关条目辅助核实；AI 查询结果可一键「标为存疑」", "修复重要缺陷：AI 调用时已生成知识库上下文却仍把原始问题发给模型（知识库等于没接上），现已真正随请求发送", "设置新增「通过 GitHub 升级」子菜单（内部版查 *-internal-4060、公开版查 *-public-4060，与网盘双通道隔离一致；私有库支持填 GitHub 只读 Token）", "菜单可隐藏：长按任意菜单项选择隐藏，设置中「恢复隐藏子菜单 / 隐藏子菜单列表」随时恢复，恢复入口受保护不会被自己锁死", "导出位置可自定义：设置「导出文件位置」预配置默认文件夹，导出前可询问（批量导出只问一次），知识库导出默认名改为「知识库YYYY-MM-DD」", "奥维 ovkmz 互通修复：导入剥除 UTF-8 BOM（原装文件不再报 xml 语法错误）、附件路径归一（照片不再只显示占位符）；导出照片目录对齐原装 ovatta/、参数分隔符对齐「键 : 值|」"]],
     ["v2.4.7", "2026-09-05", ["升级按钮与自动升级：设置菜单新增「检查新版本」一键检测（百度网盘）；发现新版自动下载安装包（直链走 fetch 分块下载+进度、下载完成提示安装位置；百度网盘分享页自动打开并备好提取码），可在升级对话框关闭自动下载", "古建改单通道：数据本身公开、两端全功能，取消内部分版——构建只出一套包（releases/），升级走 public 通道；水利/感知保持公开/内部双通道隔离不变", "发版自动上传百度网盘：构建收尾自动把安装包 + latest.json 上传到网盘「一张图发布/<应用>/<通道>/」目录（bdpan CLI；未登录时优雅跳过），并发起 30 天分享链接写回 latest.json"]],
     ["v2.4.6", "2026-09-05", ["知识库智能框架：保存即「切片+向量化」——句子级切片（尽量保持语句完整，长段按句切且重叠衔接），离线哈希向量（中英文混排，零外部依赖）+ 关键词命中 = 混合检索；支持反向查询（内容→条目）、模糊/语义查询、智能生成提示词", "引入记忆管理（MEMORY）与 Hermes 自我学习机制，并与已接入大模型有机融合（AI 提示词自动拼装 KB 精准片段 + 自学习记忆），统一上下文检索入口", "升级体系升级：水利/感知内部版与公开版均可经百度网盘自动升级（latest.json 直读清单 + download 填网盘分享链接）；升级数据导出支持自定义文件夹/文件名（默认「水利一张图备份+日期.bak」/「感知设备一张图+日期.bak」），导出文件可回灌导入并提示覆盖全部数据风险", "修复「写备忘录/写游记」菜单 script error：journal.js 全面 ES5 兼容 + 全局 helper（openModal/el/toast/KB）缺失时 fail-loud 而非静默空操作；app.js 顶注注入 NodeList.forEach 等老 WebView 兼容垫片，杜绝白屏与裸 script error", "内置轻量 OCR（tesseract.js 本地资产 chi_sim/eng，离线）：扫描件 PDF 与 jpg/png/bmp/webp 图片自动识别文字入库，懒加载不拖启动", "新增「信息与帮助→四端功能对照单/版本变更/功能介绍」全部同步到最新（含 v2.4.4~v2.4.6 新增能力）"]],
     ["v2.4.5", "2026-09-05", ["知识库格式改造（主流知识库兼容）：「导出知识库」由 zip 改为单文件 md / txt / html——md 为 YAML front matter 格式（title/tags/type/updated/id），Obsidian / Joplin / 语雀 / Notion 等主流知识库可直接导入；zip 完整备份在导出对话框保留兼容", "「导入知识库文件」支持 md / txt / html 多选导入，front matter 元数据自动还原（标题/标签/类型）；旧 .zip 备份仍可导入", "新增「导入外部文件存入知识库」智能转换：pdf / docx / xlsx / html / csv / json 等非 md 格式，应用内零依赖智能转为 Markdown 后入库——pdf 提取文本流（扫描件/加密件明确报错引导，不静默）、docx 保留标题/列表/表格、xlsx/csv 转标准 md 表格；转换全程进度条指示，支持多文件批量", "知识库查询效率优化：检索索引（标题+标签+正文小写串）按条目缓存、写入/删除自动失效；导出正文剔除可再生成的操作日志，降低 token 与文件体积"]],
@@ -4294,13 +4295,197 @@ function popupHtml(r) {
   window.__kbContext = async (q) => {
     if (!kbReady()) return "";
     try {
-      const r = await KB.smartQuery(q, 8);   // 切片级混合检索 → 精准片段，避免整篇塞入
+      const r = await (KB.fuzzyQuery ? KB.fuzzyQuery(q, 8) : KB.smartQuery(q, 8));   // v2.4.8：优先模糊检索（错字/缺字可召回）   // 切片级混合检索 → 精准片段，避免整篇塞入
       window.__kbLocalHit = !!r.length;
       return r.map((x) => "# " + (x.title || "") + (x.tags && x.tags.length ? "（" + x.tags.join("、") + "）" : "") + "\n" + (x.chunk || "")).join("\n\n---\n\n");
     } catch (e) { return ""; }
   };
   window.__kbMemoryContext = async () => { if (!kbReady() || !KB.memory) return ""; try { const m = await KB.memory(); return m ? "# 自我学习记忆（Hermes）\n" + m.slice(-2000) : ""; } catch (e) { return ""; } };
   window.__hermesNote = (kind, text) => { if (kbReady() && KB.hermes) { KB.hermes("[" + kind + "] " + String(text || "").slice(0, 200)).catch(() => {}); } };
+
+
+  // ---------- v2.4.8 知识库智能化：模糊检索 / 提示词生成 / AI记忆 / 存疑与反向查询 ----------
+  (function () {
+    if (!window.__EXT_ACTS__) window.__EXT_ACTS__ = {};
+    function kbOk() { return (typeof kbReady === "function" && kbReady() && window.KB); }
+    function escT(s) { return (typeof esc === "function") ? esc(s) : String(s == null ? "" : s); }
+    function pct(s) { return (Math.round((s || 0) * 100)) + "%"; }
+    function rowsHtml(list) {
+      if (!list || !list.length) return '<div class="hint">无匹配结果</div>';
+      return list.map(function (r, i) {
+        return '<div class="hist-item" data-kbi="' + i + '">' +
+          '<div class="hist-top"><b>' + escT(r.title || r.id) + '</b><span class="hist-badge off">' + pct(r.score) + '</span></div>' +
+          (r.tags && r.tags.length ? '<div class="hint">#' + escT(r.tags.join(" #")) + '</div>' : "") +
+          '<div class="hist-q" style="white-space:pre-wrap">' + escT(String(r.chunk || "").slice(0, 240)) + '</div>' +
+          '<div class="hist-acts"><button class="btn ghost sm" data-kbact="rev" data-kbi="' + i + '">反向查询</button>' +
+          '<button class="btn ghost sm" data-kbact="doubt" data-kbi="' + i + '">标为存疑</button></div></div>';
+      }).join("");
+    }
+    function bindKbRows(box, list) {
+      if (!box) return;
+      box.querySelectorAll("[data-kbact]").forEach(function (b) {
+        const r = list[+b.getAttribute("data-kbi")];
+        if (!r) return;
+        b.onclick = function () {
+          const act = b.getAttribute("data-kbact");
+          if (act === "doubt") {
+            if (!window.KB || !KB.markDoubt) return toast("知识库未启用");
+            KB.markDoubt(r.title || r.id, r.chunk || "", { from: "kb_fuzzy" }).then(function () { toast("已标记为存疑"); });
+          } else {
+            if (!window.KB || !KB.reverseQuery) return toast("知识库未启用");
+            KB.reverseQuery(r.chunk || "", 5).then(function (rel) {
+              openModal("反向查询 · " + (r.title || r.id), rowsHtml(rel), '<button class="btn primary" id="rvClose">关闭</button>');
+              el("rvClose").onclick = closeModal;
+            });
+          }
+        };
+      });
+    }
+    // ① 模糊检索（错字/缺字也能命中，带相关度）
+    function openKbFuzzy() {
+      if (!kbOk()) return toast("知识库未加载");
+      openModal("知识库模糊检索",
+        '<div class="hint">支持错字、缺字、语序不同：如"跌水闸"也能命中"跌水节制闸"。结果按相关度排序。</div>' +
+        '<div class="field"><label>检索内容</label><input id="kbfIn" class="inp" placeholder="输入关键词或一句话"></div>' +
+        '<div id="kbfOut" class="ai-out"></div>',
+        '<button class="btn ghost" id="kbfClose">关闭</button><button class="btn primary" id="kbfGo">模糊检索</button>');
+      el("kbfClose").onclick = closeModal;
+      const out = el("kbfOut");
+      const go = function () {
+        const q = (el("kbfIn") ? el("kbfIn").value : "").trim();
+        if (!q) return toast("请输入检索内容");
+        out.innerHTML = '<div class="hint">检索中…</div>';
+        (KB.fuzzyQuery ? KB.fuzzyQuery(q, 12) : KB.smartQuery(q, 12)).then(function (list) {
+          out.innerHTML = rowsHtml(list);
+          bindKbRows(out, list);
+        }).catch(function (e) { out.innerHTML = '<div class="err">检索失败：' + escT(e.message) + '</div>'; });
+      };
+      el("kbfGo").onclick = go;
+      if (el("kbfIn")) el("kbfIn").addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+    }
+    // ② 提示词生成（问题 + 知识库片段 + 记忆 → 完整提示词，可复制 / 直投模型）
+    function openKbPrompt() {
+      if (!kbOk() || !KB.promptGen) return toast("知识库未加载");
+      openModal("提示词生成",
+        '<div class="hint">输入问题 → 自动拼接「长期记忆 + 知识库最相关片段 + 输出要求」生成完整提示词，可复制或直投大模型。</div>' +
+        '<div class="field"><label>你的问题</label><textarea id="kbpIn" class="inp" rows="3" placeholder="如：这座闸的建成年代与管理所归属？"></textarea></div>' +
+        '<div id="kbpOut" class="ai-out"></div>',
+        '<button class="btn ghost" id="kbpClose">关闭</button><button class="btn ghost" id="kbpCopy">复制</button><button class="btn ghost" id="kbpSend">投喂模型</button><button class="btn primary" id="kbpGo">生成提示词</button>');
+      el("kbpClose").onclick = closeModal;
+      const out = el("kbpOut");
+      const gen = function () {
+        const q = (el("kbpIn") ? el("kbpIn").value : "").trim();
+        if (!q) return toast("请输入问题");
+        out.innerHTML = '<div class="hint">正在检索知识库并生成…</div>';
+        KB.promptGen(q, { k: 6, maxChars: 4000 }).then(function (p) {
+          window.__lastKbPrompt = p;
+          out.innerHTML = '<textarea id="kbpTxt" class="inp" rows="14" style="width:100%">' + escT(p) + '</textarea>';
+        }).catch(function (e) { out.innerHTML = '<div class="err">生成失败：' + escT(e.message) + '</div>'; });
+      };
+      el("kbpGo").onclick = gen;
+      el("kbpCopy").onclick = function () {
+        const t = document.getElementById("kbpTxt");
+        const s = t ? t.value : (window.__lastKbPrompt || "");
+        if (!s) return toast("请先生成提示词");
+        try { if (navigator.clipboard) navigator.clipboard.writeText(s); } catch (e) {}
+        toast("已复制提示词");
+      };
+      const send = function () {
+        const s = (document.getElementById("kbpTxt") || {}).value || window.__lastKbPrompt || "";
+        if (!s) return toast("请先生成提示词");
+        if (!window.AI || !AI.strategyCall) return toast("AI 未初始化");
+        out.insertAdjacentHTML("beforeend", '<div class="hint">已投喂大模型，等待回答…</div>');
+        AI.strategyCall(s, {}).then(function (t) {
+          out.insertAdjacentHTML("beforeend", '<div class="src-badge">[模型回答]</div><div>' + (AI.mdLite ? AI.mdLite(t) : escT(t)) + '</div>');
+        }).catch(function (e) { out.insertAdjacentHTML("beforeend", '<div class="err">调用失败：' + escT(e.message) + '</div>'); });
+      };
+      const senb = document.getElementById("kbpSend");
+      if (senb) senb.onclick = send;
+    }
+    // ③ AI 记忆（Hermes 自我学习）：查看 / 检索 / 清空
+    function openKbMemory() {
+      if (!kbOk() || !KB.memoryText) return toast("知识库未加载");
+      const show = function (list) {
+        const body = (list && list.length)
+          ? list.map(function (x) { return '<div class="hist-q">' + escT(typeof x === "string" ? x : x.line) + '</div>'; }).join("")
+          : '<div class="hint">暂无记忆</div>';
+        openModal("AI 记忆 · Hermes 自我学习",
+          '<div class="hint">系统会把每次查询/纠错/存疑自动沉淀为记忆，供后续提示词引用（可在提示词中看到「长期记忆」段）。</div>' +
+          '<div class="field"><label>检索记忆</label><input id="kbmQ" class="inp" placeholder="留空显示全部（最多 200 条）"></div>' +
+          '<div id="kbmOut" class="ai-out">' + body + '</div>',
+          '<button class="btn ghost" id="kbmClose">关闭</button><button class="btn ghost" id="kbmGo">检索</button><button class="btn ghost" id="kbmClear">清空记忆</button>');
+        el("kbmClose").onclick = closeModal;
+        el("kbmGo").onclick = function () {
+          const q = (el("kbmQ") ? el("kbmQ").value : "").trim();
+          const run = q ? KB.memorySearch(q, 50) : KB.memoryText().then(function (m) {
+            return m.split(/\r?\n/).filter(function (s) { return s.trim(); }).slice(-200).map(function (s) { return { line: s }; });
+          });
+          run.then(function (l) { el("kbmOut").innerHTML = (l && l.length) ? l.map(function (x) { return '<div class="hist-q">' + escT(typeof x === "string" ? x : x.line) + '</div>'; }).join("") : '<div class="hint">无匹配记忆</div>'; });
+        };
+        el("kbmClear").onclick = function () {
+          if (!window.confirm("确认清空全部 AI 记忆？（知识条目不受影响）")) return;
+          KB.memoryClear().then(function () { closeModal(); toast("已清空 AI 记忆"); });
+        };
+      };
+      KB.memoryText().then(function (m) {
+        const lines = m.split(/\r?\n/).filter(function (s) { return s.trim(); }).slice(-200).map(function (s) { return { line: s }; });
+        show(lines);
+      });
+    }
+    // ④ 存疑与反向查询：列出存疑条目，新增存疑后自动反向查证
+    function openKbDoubt() {
+      if (!kbOk() || !KB.listDoubts) return toast("知识库未加载");
+      const render = function () {
+        KB.listDoubts().then(function (list) {
+          const rows = list.length ? list.map(function (d, i) {
+            return '<div class="hist-item"><div class="hist-top"><b>' + escT(d.title || d.id) + '</b><span class="hist-badge off">待核实</span></div>' +
+              '<div class="hist-q" style="white-space:pre-wrap">' + escT(String(d.md || "").slice(0, 200)) + '</div>' +
+              '<div class="hist-acts"><button class="btn ghost sm" data-doubt="rev" data-i="' + i + '">反向查询</button>' +
+              '<button class="btn ghost sm" data-doubt="del" data-i="' + i + '">删除</button></div></div>';
+          }).join("") : '<div class="hint">暂无存疑条目</div>';
+          openModal("存疑与反向查询",
+            '<div class="hint">对不确定的内容打上存疑标记，系统会用其内容反向检索知识库，找出最相关的条目辅助核实。</div>' +
+            '<div class="field"><label>新增存疑 · 标题</label><input id="kbdT" class="inp" placeholder="如：某闸建成年代存疑"></div>' +
+            '<div class="field"><label>存疑内容</label><textarea id="kbdM" class="inp" rows="3" placeholder="粘贴不确定的原文或 AI 回答…"></textarea></div>' +
+            '<div class="hist-list">' + rows + '</div><div id="kbdOut" class="ai-out"></div>',
+            '<button class="btn ghost" id="kbdClose">关闭</button><button class="btn primary" id="kbdAdd">保存存疑并反向查询</button>');
+          el("kbdClose").onclick = closeModal;
+          document.querySelectorAll("[data-doubt]").forEach(function (b) {
+            const d = list[+b.getAttribute("data-i")];
+            if (!d) return;
+            b.onclick = function () {
+              if (b.getAttribute("data-doubt") === "del") {
+                if (!window.confirm("删除该存疑条目？")) return;
+                KB.del(d.id).then(render);
+                return;
+              }
+              KB.reverseQuery(d.md || "", 5).then(function (rel) {
+                openModal("反向查询 · " + (d.title || d.id), rowsHtml(rel), '<button class="btn primary" id="rv2Close">关闭</button>');
+                el("rv2Close").onclick = closeModal;
+              });
+            };
+          });
+          el("kbdAdd").onclick = function () {
+            const t = (el("kbdT") ? el("kbdT").value : "").trim();
+            const m = (el("kbdM") ? el("kbdM").value : "").trim();
+            if (!t && !m) return toast("请填写标题或存疑内容");
+            KB.markDoubt(t || "未命名存疑", m, { from: "kb_doubt" }).then(function (e) {
+              return KB.reverseQuery(m || t, 5).then(function (rel) {
+                openModal("已保存 · 反向查询结果", '<div class="hint">「' + escT(e.title) + '」已存入知识库，以下为最相关条目：</div>' + rowsHtml(rel),
+                  '<button class="btn primary" id="kbdOk">关闭</button>');
+                el("kbdOk").onclick = function () { closeModal(); render(); };
+              });
+            }).catch(function (er) { toast("保存失败：" + er.message); });
+          };
+        });
+      };
+      render();
+    }
+    window.__EXT_ACTS__.kbFuzzy = openKbFuzzy;
+    window.__EXT_ACTS__.kbPrompt = openKbPrompt;
+    window.__EXT_ACTS__.kbMemory = openKbMemory;
+    window.__EXT_ACTS__.kbDoubt = openKbDoubt;
+  })();
 
   // ---------- 启动 ----------
   window.APP = { edit: openEdit, shareBuilding,   /* v2.4.3 修复：气泡「分享」按钮 onclick=\"APP.shareBuilding()\" 长期未导出 → 点击即 script error */ del, openPhoto, viewPhotos: openPhotoCycle, navigate, nearCenter, close: closeModal, back,
