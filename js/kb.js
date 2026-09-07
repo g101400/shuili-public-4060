@@ -861,7 +861,182 @@
     return { total: es.length, byType };
   }
 
-  const KB = { init: open, put, get, all, del, clear, uid, buildIndex, retrieve, rebuildSkeleton, logOp, flushOps, hermes, parseExternal, exportZip, importZip, stats, exportAs, importDocuments, convertExternalAuto, frontMatter, parseFrontMatter, htmlToMd, mdToHtml, docxXmlToMd, pdfToMd, pdfOcrToMd, pdfExtractImages,
+
+  // ================= v2.4.8 知识库智能化：模糊检索 / 提示词生成 / 记忆 / 存疑反向查询 =================
+  // 编辑距离（英文词错字容错用，限短词）
+  function levDist(a, b) {
+    a = String(a || ""); b = String(b || "");
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    var prev = [], cur = [], i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur[0] = i;
+      for (j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1));
+      }
+      for (j = 0; j <= b.length; j++) prev[j] = cur[j];
+    }
+    return prev[b.length];
+  }
+  // 模糊相似度 0..1：整串命中=1；中文按二元语法覆盖率；英文词允许 1 字符编辑距离
+  function fuzzySim(q, text) {
+    q = String(q || "").toLowerCase();
+    text = String(text || "").toLowerCase();
+    if (!q || !text) return 0;
+    if (text.indexOf(q) >= 0) return 1;
+    var terms = q.match(/[a-z0-9]+|[\u4e00-\u9fa5]{2,}/g) || [];
+    if (!terms.length) return 0;
+    var hit = 0, i, j, k;
+    for (i = 0; i < terms.length; i++) {
+      var t = terms[i];
+      if (text.indexOf(t) >= 0) { hit += 1; continue; }
+      if (/^[a-z0-9]+$/.test(t)) {
+        if (t.length >= 4 && t.length <= 12) {
+          var words = text.match(/[a-z0-9]+/g) || [];
+          for (j = 0; j < words.length; j++) {
+            if (Math.abs(words[j].length - t.length) <= 1 && levDist(words[j], t) <= 1) { hit += 0.8; break; }
+          }
+        }
+        continue;
+      }
+      // 中文：二元语法覆盖率 + 单字覆盖率取大（容忍缺字/错字/语序/简称）
+      var grams = [], chars = 0, hitc = 0;
+      for (k = 0; k + 2 <= t.length; k++) grams.push(t.substr(k, 2));
+      for (k = 0; k < t.length; k++) { if (text.indexOf(t.charAt(k)) >= 0) hitc++; }
+      chars = t.length ? hitc / t.length : 0;
+      if (grams.length) {
+        var g = 0;
+        for (k = 0; k < grams.length; k++) if (text.indexOf(grams[k]) >= 0) g++;
+        hit += Math.max((g / grams.length) * 0.9, chars * 0.7);
+      } else {
+        hit += chars * 0.7;
+      }
+    }
+    var s = hit / terms.length;
+    return s > 1 ? 1 : s;
+  }
+
+  // ---------- 模糊检索：向量(语义) + 关键词 + 模糊(错字/缺字) 三路混合 ----------
+  async function fuzzyQuery(q, k, minScore) {
+    const es = await all();
+    if (!es.length) return [];
+    const qv = embed(q);
+    const ql = String(q || "").toLowerCase();
+    const floor = (minScore == null) ? 0.08 : minScore;
+    const out = [];
+    for (const e of es) {
+      if (e.id === "ops_log" || e.id === "MEMORY") continue;
+      const chunks = (e.chunks && e.chunks.length) ? e.chunks : chunkText(e.md || "");
+      let best = 0, bestChunk = "";
+      for (const c of chunks) {
+        const fs = fuzzySim(ql, c);
+        const cs = cosine(qv, embed(c));
+        const sc = Math.max(fs, cs);
+        if (sc > best) { best = sc; bestChunk = c; }
+      }
+      const tv = cosine(qv, vecArray(e));
+      const ts = fuzzySim(ql, (e.title || "") + " " + (e.tags || []).join(" "));
+      const score = Math.max(best, ts, tv);
+      if (score > floor) out.push({ id: e.id, title: e.title, type: e.type, tags: e.tags || [], score: score, chunk: (bestChunk || (e.md || "")).slice(0, 320) });
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, k || 10);
+  }
+
+  // ---------- 反向查询：给定一段内容 → 最相关的知识条目（带相关度与命中片段）----------
+  async function reverseQuery(md, k) {
+    const es = await all();
+    if (!es.length) return [];
+    const qv = embed(md);
+    const ql = String(md || "").toLowerCase().slice(0, 800);
+    const out = [];
+    for (const e of es) {
+      if (e.id === "ops_log" || e.id === "MEMORY") continue;
+      const chunks = (e.chunks && e.chunks.length) ? e.chunks : chunkText(e.md || "");
+      let best = -1, bestChunk = "";
+      for (const c of chunks) {
+        const sc = Math.max(cosine(qv, embed(c)), fuzzySim(ql, c));
+        if (sc > best) { best = sc; bestChunk = c; }
+      }
+      const score = Math.max(best, cosine(qv, vecArray(e)));
+      if (score > 0.10) out.push({ id: e.id, title: e.title, type: e.type, tags: e.tags || [], score: score, chunk: (bestChunk || (e.md || "")).slice(0, 320) });
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, k || 5);
+  }
+
+  // ---------- 提示词生成：问题 + 模糊检索片段 + 长期记忆 → 可直接投喂大模型的完整提示词 ----------
+  async function promptGen(q, opt) {
+    opt = opt || {};
+    const maxChars = opt.maxChars || 4000;
+    const role = opt.role || "你是严谨的知识助手，优先依据下列本地资料作答。";
+    const parts = [];
+    parts.push("# 角色\n" + role);
+    let used = parts[0].length;
+    if (opt.withMemory !== false) {
+      try {
+        const m = await memory();
+        if (m) {
+          const tail = m.slice(-Math.min(1200, Math.max(0, maxChars - used)));
+          if (tail) { parts.push("# 长期记忆（Hermes 自我学习）\n" + tail); used += tail.length; }
+        }
+      } catch (e) { /* 记忆缺失不影响提示词生成 */ }
+    }
+    const refs = await fuzzyQuery(q, opt.k || 6);
+    if (refs.length) {
+      const blocks = [];
+      for (let i = 0; i < refs.length; i++) {
+        const r = refs[i];
+        const seg = "[" + (i + 1) + "] 《" + (r.title || r.id) + "》" + (r.tags && r.tags.length ? "（" + r.tags.join("、") + "）" : "") + "\n" + (r.chunk || "");
+        if (used + seg.length > maxChars) break;
+        blocks.push(seg); used += seg.length;
+      }
+      if (blocks.length) parts.push("# 本地知识库参考（按相关度排序，引用请标注 [n]）\n" + blocks.join("\n\n"));
+    }
+    parts.push("# 用户问题\n" + String(q || ""));
+    parts.push("# 输出要求\n1) 优先使用上述资料；资料未覆盖的部分请明确说明「资料不足」并标注存疑，不要编造。\n2) 引用处用 [n] 标注来源编号。\n3) 中文作答，简明、结构化。");
+    return parts.join("\n\n---\n\n");
+  }
+
+  // ---------- 存疑：标注 + 列表（与反向查询联动，形成"存疑→查证"闭环）----------
+  async function markDoubt(title, text, meta) {
+    const e = {
+      id: uid(), type: "doubt",
+      title: String(title || "未命名存疑").slice(0, 60),
+      tags: ["存疑", "待核实"],
+      md: String(text || ""),
+      meta: Object.assign({ source: "manual", time: new Date().toISOString() }, meta || {})
+    };
+    await put(e);
+    autoRemember("存疑", e.title + " :: " + String(text || "").slice(0, 80));
+    return e;
+  }
+  async function listDoubts() {
+    const es = await all();
+    return es.filter((e) => e.type === "doubt").sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  }
+
+  // ---------- 记忆管理（Hermes）：读取 / 检索 / 清空 ----------
+  async function memoryText() { const m = await get("MEMORY"); return m ? String(m.md || "") : ""; }
+  async function memorySearch(q, k) {
+    const m = await memoryText();
+    if (!m) return [];
+    const lines = m.split(/\r?\n/).filter((s) => s.trim());
+    const scored = lines.map((s) => ({ line: s, score: Math.max(fuzzySim(q, s), 0) }))
+      .filter((x) => x.score > 0.05)
+      .sort((a, b) => b.score - a.score);
+    return scored.slice(0, k || 20);
+  }
+  async function memoryClear() {
+    for (const k in _memSeen) delete _memSeen[k];
+    await put({ id: "MEMORY", type: "memory", title: "MEMORY", tags: ["hermes", "记忆"], md: "", meta: {} });
+    return true;
+  }
+
+  const KB = { fuzzyQuery, promptGen, reverseQuery, markDoubt, listDoubts, fuzzySim,
+    memoryText, memorySearch, memoryClear, init: open, put, get, all, del, clear, uid, buildIndex, retrieve, rebuildSkeleton, logOp, flushOps, hermes, parseExternal, exportZip, importZip, stats, exportAs, importDocuments, convertExternalAuto, frontMatter, parseFrontMatter, htmlToMd, mdToHtml, docxXmlToMd, pdfToMd, pdfOcrToMd, pdfExtractImages,
     chunkText, embed, vecOf, vecArray, cosine, queryByContent, smartQuery, memory, remember, autoRemember,
     _zip: { makeZip, parseZip, crc32 } };
   global.KB = KB;
