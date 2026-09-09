@@ -426,8 +426,9 @@ html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Seg
 
 /* v2.4.9 子菜单隐藏/收藏按钮 */
 .menu-btn{position:relative}
-.macts{display:flex;gap:6px;margin-left:auto;flex:0 0 auto;align-items:center;padding-left:4px}
-.mact{width:30px;height:30px;line-height:30px;text-align:center;border-radius:9px;font-size:14px;
+.macts{display:flex;gap:10px;margin-left:auto;flex:0 0 auto;align-items:center;padding-left:26px;margin-right:2px}
+.macts::before{content:"";width:1px;height:26px;background:rgba(127,127,127,.28);margin-right:6px}
+.mact{width:34px;height:34px;line-height:34px;text-align:center;border-radius:10px;font-size:15px;
   background:rgba(127,127,127,.16);border:1px solid rgba(127,127,127,.28);cursor:pointer;
   -webkit-user-select:none;user-select:none;opacity:.9}
 .mact:active{transform:scale(.92);opacity:1}
@@ -436,7 +437,7 @@ html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Seg
 .mact.disabled{opacity:.28}
 .macttg{margin-right:10px;font-size:15px;cursor:pointer;opacity:.75;-webkit-user-select:none;user-select:none}
 .macttg:active{opacity:1}
-@media (max-width:360px){.mact{width:26px;height:26px;line-height:26px;font-size:12px}}
+@media (max-width:360px){.mact{width:30px;height:30px;line-height:30px;font-size:13px}.macts{padding-left:18px;gap:8px}}
 
 /* v2.4.9 启动口令锁屏 */
 .pwdlock{position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;
