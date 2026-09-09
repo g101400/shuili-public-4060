@@ -396,6 +396,38 @@ ${places}
   }
 
   // ---------- 导入 ----------
+
+  // ---------- v2.4.9 照片显示加固：MIME 魔数嗅探 + 三字段必填 ----------
+  function mimeOfBytes(b) {
+    if (!b || b.length < 4) return "image/jpeg";
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "image/gif";
+    if (b[0] === 0x42 && b[1] === 0x4d) return "image/bmp";
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b.length > 11 &&
+        String.fromCharCode(b[8], b[9], b[10], b[11]) === "WEBP") return "image/webp";
+    return "image/jpeg";
+  }
+  function photoSrcOf(p) { return (p && (p.full || p.dataUrl || p.thumb)) || ""; }
+  // 统一入口：任何来源（ovkmz / zip / 原生）落库前都保证 thumb/full/dataUrl 至少一个可用
+  async function pushKmzPhoto(r, ref, data) {
+    const cap = String(ref || "").split("/").pop();
+    const raw = "data:" + mimeOfBytes(data) + ";base64," + bytesToB64(data);
+    let thumb = raw, full = raw, hash = "";
+    try {
+      if (typeof ImgUtil !== "undefined" && ImgUtil && ImgUtil.compressPhoto) {
+        const cp = await ImgUtil.compressPhoto(data);
+        if (cp && cp.thumb && String(cp.thumb).length > 30) thumb = cp.thumb;
+        if (cp && cp.full && String(cp.full).length > 30) full = cp.full;
+        if (cp && cp.hash) hash = cp.hash;
+      }
+    } catch (e) { /* 压缩失败不阻断：退回原图，保证一定显示得出来 */ }
+    if (!full || String(full).length < 30) full = raw;
+    if (!thumb || String(thumb).length < 30) thumb = full;
+    r.photos = r.photos || [];
+    r.photos.push({ caption: cap, thumb: thumb, full: full, dataUrl: full, hash: hash, mime: mimeOfBytes(data) });
+  }
+
   async function importKmzBuffer(buf) {
     const files = await unzip(new Uint8Array(buf).buffer);
     const kmlName = Object.keys(files).find((n) => n.toLowerCase().endsWith(".kml")) || "doc.kml";
@@ -437,15 +469,7 @@ ${places}
       r.photos = [];
       for (const ref of (r.photoFiles || [])) {
         const data = resolveImg(ref);
-        if (data && !seen.has(data)) {
-          seen.add(data);
-          try {
-            const cp = await ImgUtil.compressPhoto(data);
-            r.photos.push({ caption: ref.split("/").pop(), thumb: cp.thumb, full: cp.full, dataUrl: cp.full, hash: cp.hash });
-          } catch (e) {
-            r.photos.push({ caption: ref.split("/").pop(), dataUrl: "data:image/jpeg;base64," + bytesToB64(data) });
-          }
-        }
+        if (data && !seen.has(data)) { seen.add(data); await pushKmzPhoto(r, ref, data); }
       }
     }
     return recs;
