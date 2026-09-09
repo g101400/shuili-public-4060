@@ -4764,7 +4764,7 @@ function popupHtml(r) {
       <div class="field"><label>浏览器端 TIANDITU_TOKEN（前端在线底图加载）</label><input id="tdtClient" class="inp" value="" placeholder="留空则保持当前密钥 · 32位 16 进制字符串"></div>
       <div class="field"><label>服务端 TIANDITU_SERVER_TOKEN（瓦片下载脚本）</label><input id="tdtServer" class="inp" value="" placeholder="留空则保持当前密钥 · 32位 16 进制字符串"></div>
       <div class="field"><label>当前生效的 token（已隐藏，防窃取）</label><input class="inp" readonly value="客户端：••••••••••••••••    服务端：••••••••••••••••"></div>
-      <div class="field"><label>复制当前密钥（需验证访问密码 <b>3305</b>）</label><input id="tdtPwd" type="password" class="inp" placeholder="输入访问密码" autocomplete="off"></div>
+      <div class="field"><label>复制当前密钥（需验证访问密码）</label><input id="tdtPwd" type="password" class="inp" placeholder="输入访问密码" autocomplete="off"></div>
       <div class="hint">密钥不再明文展示；点「复制当前密钥」并在上方输入正确密码后才可复制。恢复默认：点「恢复默认」回到内置 token；点「清空保存」清空 localStorage（恢复用 __CONFIG__ 注入）。</div>`;
     openModal("天地图密钥管理", html, `<button class="btn ghost" id="tdtReset">恢复默认</button><button class="btn ghost" id="tdtClear">清空保存</button><button class="btn ghost" id="tdtCopy">复制当前密钥</button><button class="btn ghost" id="tdtCancel">取消</button><button class="btn primary" id="tdtSave">💾 保存并立即生效</button>`);
     el("tdtCancel").onclick = closeModal;
@@ -4842,7 +4842,7 @@ function popupHtml(r) {
     d.className = "pwdlock";
     d.innerHTML = '<div class="box">'
       + '<h3>请输入启动口令</h3>'
-      + '<div class="hint">首次使用默认口令 <b>3305</b>。进入后可在「设置 → 修改密码」中更改。</div>'
+      + '<div class="hint">请输入启动口令（初始口令由管理员提供）。进入后可在「设置 → 修改密码」中更改。</div>'
       + '<input id="pwdInput" class="inp" type="password" inputmode="numeric" autocomplete="off" placeholder="启动口令">'
       + '<label class="row"><input id="pwdRemember" type="checkbox"/> 保存密码，下次不用输入</label>'
       + '<div class="err" id="pwdErr"></div>'
@@ -4900,26 +4900,26 @@ function popupHtml(r) {
       if (n !== n2) { toast("两次输入的新口令不一致"); return; }
       pwdSet(n);
       closeModal();
-      toast("口令已修改，请牢记（忘记请联系开发者，分机号 " + DEV_EXT_NO + "）");
+      toast("口令已修改，请牢记；忘记口令请联系管理员协助重置");
     };
   }
   // 设置子菜单：忘记密码
   function openForgotPwd() {
     openModal("忘记密码",
-      '<div class="hint">请联系开发者协助重置（分机号 <b>' + DEV_EXT_NO + '</b>）。<br/>'
-      + '开发者确认身份后可在本页输入分机号，将口令重置为默认 <b>' + PWD_DEFAULT + '</b>。<br/>'
+      '<div class="hint">忘记口令请联系软件开发者 / 管理员协助重置。<br/>'
+      + '由开发者确认身份后，在本页输入<b>重置验证码</b>即可把口令恢复为初始口令。<br/>'
       + '<span style="color:#ffb4b4">重置只影响启动口令，不会删除任何业务数据。</span></div>'
-      + '<div class="field"><label>开发者分机号</label><input id="fgExt" class="inp" autocomplete="off" placeholder="请输入开发者分机号"></div>',
+      + '<div class="field"><label>重置验证码</label><input id="fgExt" class="inp" type="password" autocomplete="off" placeholder="请输入开发者提供的重置验证码"></div>',
       '<button class="btn ghost" id="fgCancel">关闭</button><button class="btn primary" id="fgReset">验证并重置</button>');
     var c = el("fgCancel"); if (c) c.onclick = closeModal;
     var r = el("fgReset");
     if (r) r.onclick = function () {
       var v = ((el("fgExt") || {}).value || "").trim();
-      if (v !== String(DEV_EXT_NO)) { toast("分机号不正确，请联系开发者（分机号 " + DEV_EXT_NO + "）"); return; }
+      if (v !== String(DEV_EXT_NO)) { toast("重置验证码不正确，请联系开发者 / 管理员获取"); return; }
       try { localStorage.removeItem(PWD_KEY); } catch (e) {}
       pwdSet(PWD_DEFAULT);
       closeModal();
-      toast("口令已重置为默认 " + PWD_DEFAULT);
+      toast("口令已恢复为初始口令，请登录后立即修改");
     };
   }
   try { if (!window.__EXT_ACTS__) window.__EXT_ACTS__ = {}; } catch (e) {}
