@@ -424,20 +424,23 @@ html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Seg
 .drawer .mgroup[data-grp="快捷常用"]{color:#b07d10;border-top:1px dashed rgba(245,185,66,.5);padding-top:8px;margin-top:10px}
 
 
-/* v2.4.9 子菜单隐藏/收藏按钮 */
+/* v2.4.9 子菜单隐藏/收藏按钮（v2.4.9-B：留白再加码，彻底避免误触子菜单正文） */
 .menu-btn{position:relative}
-.macts{display:flex;gap:10px;margin-left:auto;flex:0 0 auto;align-items:center;padding-left:26px;margin-right:2px}
-.macts::before{content:"";width:1px;height:26px;background:rgba(127,127,127,.28);margin-right:6px}
-.mact{width:34px;height:34px;line-height:34px;text-align:center;border-radius:10px;font-size:15px;
+.menu-btn>.macts{pointer-events:auto}
+.macts{display:flex;gap:18px;margin-left:auto;flex:0 0 auto;align-items:center;padding-left:48px;margin-right:4px}
+.macts::before{content:"";width:1px;height:28px;background:rgba(127,127,127,.32);margin-right:14px}
+.mact{width:36px;height:36px;line-height:36px;text-align:center;border-radius:11px;font-size:15px;
   background:rgba(127,127,127,.16);border:1px solid rgba(127,127,127,.28);cursor:pointer;
   -webkit-user-select:none;user-select:none;opacity:.9}
 .mact:active{transform:scale(.92);opacity:1}
 .mact.on{background:rgba(245,185,66,.24);border-color:#f5b942;color:#f5b942}
 .mact.hide{background:rgba(230,90,90,.16);border-color:rgba(230,90,90,.45)}
 .mact.disabled{opacity:.28}
-.macttg{margin-right:10px;font-size:15px;cursor:pointer;opacity:.75;-webkit-user-select:none;user-select:none}
+.macttg{margin-right:12px;font-size:15px;cursor:pointer;opacity:.75;-webkit-user-select:none;user-select:none}
 .macttg:active{opacity:1}
-@media (max-width:360px){.mact{width:30px;height:30px;line-height:30px;font-size:13px}.macts{padding-left:18px;gap:8px}}
+/* 窄屏：按钮自身略缩，但正文与按钮之间的横向留白不缩水 */
+@media (max-width:420px){.macts{padding-left:34px;gap:14px}}
+@media (max-width:360px){.mact{width:32px;height:32px;line-height:32px;font-size:13px}.macts{padding-left:28px;gap:12px}.macts::before{margin-right:10px}}
 
 /* v2.4.9 启动口令锁屏 */
 .pwdlock{position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;
