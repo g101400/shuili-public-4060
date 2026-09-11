@@ -323,6 +323,16 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); if (a.parentNode) a.parentNode.removeChild(a); }, 1500);
   }
   function exportWord(title, html) { downloadBlob(title + ".doc", docHtml(title, html), "application/msword"); toast("已导出 Word：" + title + ".doc"); }
+  // v2.4.9-E：导出 PDF（无第三方库时走「打印视图 + 自动唤起打印」，在打印对话框选「另存为 PDF」）
+  function exportPdf(title, html) {
+    var w = window.open("", "_blank");
+    if (!w) { toast("浏览器拦截了新窗口，请允许弹窗后重试"); return; }
+    var full = docHtml(title, html)
+      + '<div style="position:fixed;right:16px;bottom:16px;z-index:9"><button onclick="window.print()" style="padding:10px 16px;font-size:14px;border-radius:8px;border:1px solid #888;background:#fff;cursor:pointer">打印 / 另存为 PDF</button></div>';
+    w.document.write(full); w.document.close();
+    try { w.focus(); setTimeout(function () { try { w.print(); } catch (e) {} }, 350); } catch (e) {}
+    toast("已打开打印视图：在打印对话框选「另存为 PDF」即可导出 PDF");
+  }
   function previewWord(title, html) {
     var w = window.open("", "_blank");
     if (!w) { toast("浏览器拦截了新窗口，请允许弹窗后重试"); return; }
@@ -401,14 +411,14 @@
     return { name: base, html: html, md: md, mode: used };
   }
 
-  // ---------------- UI ----------------
+  // ---------------- UI ----------------  v2.4.9-E
   function openObjParamSearch() {
     var n = ensureIndex().length;
     openModal("参数反查" + LABEL,
       '<div class="hint">已建索引 <b>' + n + '</b> 个' + LABEL + '。输入参数描述即可反查，例如：宽度 3 米的闸门、两米宽的公路桥、高程 50 米的渡槽。</div>'
       + '<div class="field"><input id="opsQ" class="inp" placeholder="如：宽度3米的闸门"></div>'
       + '<div id="opsOut" style="max-height:46vh;overflow:auto;margin-top:8px"></div>',
-      '<button class="btn ghost" id="opsRebuild">重建索引</button><button class="btn ghost" id="opsDoc">导出Word</button><button class="btn primary" id="opsGo">查询</button>');
+      '<button class="btn ghost" id="opsRebuild">重建索引</button><button class="btn ghost" id="opsDoc">导出Word</button><button class="btn ghost" id="opsPdf">导出PDF</button><button class="btn primary" id="opsGo">查询</button>');
     var last = null;
     function run() {
       var q = (el("opsQ") || {}).value || "";
@@ -461,6 +471,13 @@
       exportWord(LABEL + "检索报告", html);
       previewWord(LABEL + "检索报告", html);
     };
+    var pd = el("opsPdf");
+    if (pd) pd.onclick = function () {
+      if (!last || !last.objs.length) { toast("请先查询"); return; }
+      var st = statAnswer(last.q);
+      var docs = last.objs.length ? queryDocByObject(last.objs[0].name, 6) : [];
+      exportPdf(LABEL + "检索报告", composeArticle(last.q, last.objs, docs, st));
+    };
   }
   function openObjStats() {
     var st = statAnswer("");
@@ -469,7 +486,7 @@
       '<div class="hint">当前库内共 <b>' + st.all + '</b> 个' + LABEL + '。输入关键词可按类型收敛（如“闸门”“桥”）。</div>'
       + '<div class="field"><input id="osQ" class="inp" placeholder="如：闸门"></div>'
       + '<div id="osOut" style="max-height:46vh;overflow:auto;margin-top:8px"></div>',
-      '<button class="btn ghost" id="osExport">导出Word</button><button class="btn primary" id="osGo">统计</button>');
+      '<button class="btn ghost" id="osExport">导出Word</button><button class="btn ghost" id="osPdf">导出PDF</button><button class="btn primary" id="osGo">统计</button>');
     function render(st2) {
       var box = el("osOut"); if (!box) return;
       var r = st2.groups[0].sub.length && st2.keyword ? st2.groups[0].sub : st2.groups[0].rows;
@@ -489,6 +506,15 @@
         + '</table><p>合计：' + s.all + ' 个' + LABEL + '。</p>';
       exportWord(LABEL + "分类统计", html);
       previewWord(LABEL + "分类统计", html);
+    };
+    var pd = el("osPdf");
+    if (pd) pd.onclick = function () {
+      var s = window.__LAST_STAT__ || statAnswer((el("osQ") || {}).value || "");
+      var rows = s.groups[0].sub.length && s.keyword ? s.groups[0].sub : s.groups[0].rows;
+      var html = '<h2>' + LABEL + '分类统计</h2><table><tr><th>类型</th><th>数量</th></tr>'
+        + rows.map(function (x) { return '<tr><td>' + esc(x.key) + '</td><td>' + x.count + '</td></tr>'; }).join("")
+        + '</table><p>合计：' + s.all + ' 个' + LABEL + '。</p>';
+      exportPdf(LABEL + "分类统计", html);
     };
   }
   function openTypeDefInit() {
@@ -518,10 +544,11 @@
           openModal("PDF 转 Word · " + r.name,
             '<div class="hint">来源：' + esc(file.name) + '，转换方式：' + (r.mode === "ocr" ? "OCR 识别" : "文本层提取") + '</div>'
             + '<div id="p2wPrev" style="max-height:50vh;overflow:auto;border:1px solid rgba(127,127,127,.25);padding:10px;border-radius:8px">' + r.html + '</div>',
-            '<button class="btn ghost" id="p2wPrint">打印</button><button class="btn ghost" id="p2wPreview">新窗口预览</button><button class="btn primary" id="p2wSave">导出 Word</button>');
+            '<button class="btn ghost" id="p2wPrint">打印</button><button class="btn ghost" id="p2wPreview">新窗口预览</button><button class="btn ghost" id="p2wPdf">导出 PDF</button><button class="btn primary" id="p2wSave">导出 Word</button>');
           var s = el("p2wSave"); if (s) s.onclick = function () { exportWord(r.name, r.html); };
           var pv = el("p2wPreview"); if (pv) pv.onclick = function () { previewWord(r.name, r.html); };
           var pr = el("p2wPrint"); if (pr) pr.onclick = function () { previewWord(r.name, r.html); };
+          var pf = el("p2wPdf"); if (pf) pf.onclick = function () { exportPdf(r.name, r.html); };
         }).catch(function (e) {
           var out3 = el("p2wOut");
           if (out3) out3.innerHTML = '<div class="hint" style="color:#ff9a9a">转换失败：' + esc(e && e.message ? e.message : e) + '</div>';
@@ -587,7 +614,7 @@
   global.OBJS = {
     buildIndex: buildIndex, queryByParam: queryByParam, statAnswer: statAnswer, groupCount: groupCount, matchKw: matchKw, coreOf: coreOf,
     initTypeDefs: initTypeDefs, linkDocs: linkDocs, queryDocByObject: queryDocByObject,
-    composeArticle: composeArticle, exportWord: exportWord, previewWord: previewWord, docHtml: docHtml,
+    composeArticle: composeArticle, exportWord: exportWord, exportPdf: exportPdf, previewWord: previewWord, docHtml: docHtml,
     pdfToWord: pdfToWord, parseNums: parseNums, objText: objText, LABEL: LABEL, _idx: IDX
   };
 })(window);
