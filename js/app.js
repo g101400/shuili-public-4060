@@ -155,7 +155,7 @@
   }
 
   // 全局版本号（单一事实来源：关于 / 版本变更 / 帮助 均引用此处，避免硬编码漂移）
-  const APP_VER = "v2.4.9";
+  const APP_VER = "v2.5.0";
 
   // ---------- 状态 ----------
   let BASE = [], DELTA = { added: [], updated: {}, deleted: [] }, records = [];
@@ -354,6 +354,7 @@
     applyDims();
     merge();
     render();
+    pruneFilter();   // v2.5.0 需求七：数据与名单就绪后，清掉上次会话残留的失效筛选值
   }
   function merge() {
     const del = new Set(DELTA.deleted || []);
@@ -369,6 +370,11 @@
   // ---------- 组织层级配置（局/管理处/所/站/段 · 持久化 + 双向联动 · v2.4 五级化）----------
   const BASE_OFFICES = ["地下水源所", "温泉所", "龙山所", "史山所", "埝头所", "水库所", "北台上所", "西田各庄所", "潮河所"];
   const BASE_OFFICES_SET = new Set(BASE_OFFICES);
+  /* v2.5.0 需求七：管理处基础名单（与「京密引水管理处 IP 信息统计表」的 9 所同源同属）。
+   * 作用：① 让「管理处」层级也有和「所」一样的「基础名单（锁定）」语义，不再只有「默认/自定义/数据派生」三态；
+   *       ② 筛选侧与设置侧的名单顺序统一为「默认 → 基础名单 → 其余」，两侧逐项对应、肉眼可核。 */
+  const BASE_MGMTS = ["京密引水管理处"];
+  const BASE_MGMTS_SET = new Set(BASE_MGMTS);
   // v2.4.1：管理所可以是数组（多个预选）；段默认可为空；段和所独立，段名不必跟随所名
   const DEFAULT_ORG = { bureau: "水利工程管理中心", mgmt: "京密引水管理处", office: ["水库所"], station: "", section: "" };
   const ORG_LEVELS = [
@@ -423,21 +429,48 @@
     }
     return "";  // station / section 默认空
   }
+  /* v2.5.0 需求七：机构名单统一排序 —— 默认值 → 基础名单 → 其余（字面序）。
+   * 筛选面板 chip、设置页列表、表单下拉三处共用同一顺序，
+   * 「筛选里看到的处所和设置里看到的对不上」这一观感从根上消除。 */
+  function orderDims(vals, defaults, bases) {
+    const def = ([].concat(defaults || [])).filter(Boolean);
+    const base = (bases || []).filter(Boolean).filter((v) => def.indexOf(v) < 0);
+    const rest = uniq((vals || []).filter(Boolean)).filter((v) => def.indexOf(v) < 0 && base.indexOf(v) < 0);
+    return def.concat(base, rest);
+  }
+  /* v2.5.0 需求七：剔除「幽灵筛选值」。
+   * 在设置页删掉/改掉某个管理处后，筛选里残留的旧勾选既不会渲染成 chip、又一直在后台过滤，
+   * 表现为「设置里已经没有这个处了，筛选却怎么都筛不出东西」。打开筛选/机构管理前先清一遍。 */
+  function pruneFilter() {
+    const src = { bureau: () => DIMS.bureaus, mgmt: () => DIMS.mgmts, office: () => DIMS.offices, station: () => DIMS.stations, btype: () => DIMS.btypes };
+    let dropped = 0;
+    Object.keys(src).forEach((k) => {
+      const all = src[k]() || [];
+      const arr = Array.isArray(filter[k]) ? filter[k] : [];
+      const kept = arr.filter((v) => all.includes(v));
+      dropped += arr.length - kept.length;
+      filter[k] = kept;
+    });
+    return dropped;
+  }
   function applyDims() {
     // 各层级选项 = 数据实际出现 ∪ 默认值（多值时全部展开）∪ 基础名单 ∪ 用户自定义
     const cfgB = (ORGCFG.bureaus || []).filter(Boolean);
-    DIMS.bureaus = uniq([...records.map((r) => orgVal(r, "bureau")).filter(Boolean), orgDefault("bureau"), ...cfgB]);
+    DIMS.bureaus = orderDims([...records.map((r) => orgVal(r, "bureau")), ...cfgB], [orgDefault("bureau")], []);
     const cfgM = (ORGCFG.mgmts || []).filter(Boolean);
-    DIMS.mgmts = uniq([...records.map((r) => orgVal(r, "mgmt")).filter(Boolean), orgDefault("mgmt"), ...cfgM]);
+    DIMS.mgmts = orderDims([...records.map((r) => orgVal(r, "mgmt")), ...cfgM], [orgDefault("mgmt")], BASE_MGMTS);
     const officeDefaults = orgDefault("office");  // v2.4.1 数组
     const cfgOff = (ORGCFG.officeExtra || []).map((o) => normOffice(o)).filter(Boolean);
-    DIMS.offices = uniq([...records.map((r) => normOffice(orgVal(r, "office"))).filter(Boolean), ...officeDefaults, ...BASE_OFFICES, ...cfgOff]);
+    DIMS.offices = orderDims([...records.map((r) => normOffice(orgVal(r, "office"))), ...cfgOff], officeDefaults, BASE_OFFICES);
     const cfgSt = (ORGCFG.stations || []).map((s) => s.name).filter(Boolean);
     DIMS.stations = uniq([...records.map((r) => r.station).filter(Boolean), ...cfgSt]);
     const cfgSec = (ORGCFG.sections || []).filter(Boolean);
     DIMS.sections = uniq([...records.map((r) => r.section).filter(Boolean), ...cfgSec]);
     const cfgBt = (ORGCFG.btypeExtra || []).filter(Boolean);
     DIMS.btypes = uniq([...records.map((r) => r.btype).filter(Boolean), ...cfgBt]);
+    // 注意：这里**不**调用 pruneFilter()。applyDims() 在 load() 里 records 尚为空时也会被调一次，
+    // 那时 DIMS.btypes 只有自定义项，会把用户上次保存的类型筛选误清空。prune 统一放在
+    // load() 数据就绪后 与 openFilter()/openOrgManager() 打开时执行。
   }
   const DIMS = { bureaus: [], mgmts: [], offices: [], stations: [], sections: [], btypes: [] };
   function uniq(a) { return [...new Set(a)].sort(); }
@@ -769,6 +802,7 @@ function popupHtml(r) {
 
   // ---------- 筛选（多选 管理所 / 建筑物类型；选管理所自动定位）----------
   function openFilter() {
+    const dropped = pruneFilter();   // v2.5.0 需求七：打开前先清失效值，避免「幽灵条件」把结果筛空
     const kwHist = loadKwHist();
     const group = (title, arr, sel) =>
       `<div class="fgroup"><div class="ftitle">${title}（<b class="cnt">${sel.length}</b> 已选）</div><div class="chips">` +
@@ -796,6 +830,8 @@ function popupHtml(r) {
       `</div></div>` +
       `<div class="fhit" id="fHit" style="margin-top:12px;padding:9px 12px;border:1px dashed var(--accent);border-radius:10px;color:var(--txt);font-size:13px">当前命中 <b id="fHitB" style="color:var(--accent);font-size:15px">0</b> 个建筑物 · <b id="fHitP" style="color:var(--accent);font-size:15px">0</b> 张照片</div>`;
     openModal("筛选", html, `<button class="btn ghost" id="fExit">退出</button><button class="btn ghost" id="fReset">重置</button><button class="btn primary" id="fApply">应用</button>`);
+    // v2.5.0 需求七：在弹窗内提示被自动清除的失效条件（弹窗打开后再提示，否则 toast 被遮住）
+    if (dropped) setTimeout(() => toast(`已自动清除 ${dropped} 个已失效的筛选条件（设置中已删除/改名）`), 80);
     const body = el("modalBody");
     const liveCount = () => {
       const bo = [...body.querySelectorAll('.chip[data-grp="管理所"].on')].map((c) => c.dataset.v);
@@ -1002,6 +1038,7 @@ function popupHtml(r) {
 
   // ---------- 组织层级管理（局/管理处/所/站/段 · v2.4）----------
   function openOrgManager(focusLevel) {
+    pruneFilter();   // v2.5.0 需求七：进设置页前先清失效值，与筛选侧名单口径当场对齐
     const LV = {
       bureau:  { label: "局",     field: "bureau",  dims: () => DIMS.bureaus,  extra: () => ORGCFG.bureaus,  setExtra: (a) => { ORGCFG.bureaus = a; } },
       mgmt:    { label: "管理处", field: "mgmt",    dims: () => DIMS.mgmts,    extra: () => ORGCFG.mgmts,    setExtra: (a) => { ORGCFG.mgmts = a; } },
@@ -1020,9 +1057,11 @@ function popupHtml(r) {
       return (L.dims() || []).map((v) => {
         const cnt = cntOf(lv, v);
         const isDef = isDefaultOf(lv, v);
-        const isBase = (lv === "office") && BASE_OFFICES_SET.has(v);
+        const isBase = (lv === "office" && BASE_OFFICES_SET.has(v)) || (lv === "mgmt" && BASE_MGMTS_SET.has(v));
         const isExtra = L.extra ? (L.extra() || []).includes(v) : ((ORGCFG.stations || []).some((x) => x.name === v));
-        const tag = isDef ? '<span class="cfg-lock">⭐ 默认</span>' : isBase ? '<span class="cfg-lock">🔒 基础名单</span>' : isExtra ? "自定义" : "数据派生";
+        const tag = isDef
+          ? `<span class="cfg-lock">${isBase ? "⭐ 默认 · 🔒 基础名单" : "⭐ 默认"}</span>`
+          : isBase ? '<span class="cfg-lock">🔒 基础名单</span>' : isExtra ? "自定义" : "数据派生";
         let acts = `<button class="btn tiny" data-ren="${lv}" data-v="${esc(v)}">重命名</button>`;
         if (!isDef && !isBase && isExtra) acts += ` <button class="btn tiny danger" data-del="${lv}" data-v="${esc(v)}">删除</button>`;
         let parent = "";
@@ -1062,7 +1101,7 @@ function popupHtml(r) {
     };
     const html = `<div class="hint">组织层级：局 → 管理处 → 所 → 站 → 段。此处增删改会<b>同步更新</b>筛选、导入导出、添加建筑物等全部用到该层级的位置；重命名可级联更新建筑物。</div>` +
       sec("bureau", "顶级单位，默认：" + esc(orgDefault("bureau"))) +
-      sec("mgmt", "局的下级管理处，默认：" + esc(orgDefault("mgmt"))) +
+      sec("mgmt", "本栏与「筛选 → 管理处」<b>同一份名单、同一顺序</b>（默认 → 🔒 基础名单 → 其余），逐项对应。基础名单为「京密引水管理处」，不可删除、不可改名；自行添加的处显示为「自定义」，可重命名或删除（改名会级联同步到数据）。默认：" + esc(orgDefault("mgmt"))) +
       sec("office", "基础 9 所名单不可删；自定义可重命名/删除。") +
       sec("station", "站隶属于所（右侧下拉可调整）。") +
       sec("section", "段隶属于站（可留空）。") +
@@ -3039,6 +3078,8 @@ function popupHtml(r) {
       <b>🔎 知识库增强（v2.4.8）</b>：<b>模糊检索</b>错字 / 缺字 / 语序不同也能命中（结果带相关度百分比）；<b>提示词生成</b>把「问题 + 知识库最相关片段 + 长期记忆」自动拼成完整提示词，可复制自用或直接投喂大模型；<b>存疑与反向查询</b>可对任一条目打标并反查知识库辅助核实；设置新增「<b>通过 GitHub 升级</b>」（内部版查 *-internal-4060、公开版查 *-public-4060，与网盘双通道隔离一致）。<br>
       <b>🔐 启动口令保护（内部版，v2.4.9）</b>：首次启动校验启动口令，支持「记住本机 / 修改口令 / 忘记口令」；忘记口令时请联系软件开发者或管理员协助重置（出厂口令见交付说明）。公开版与古建为单通道发布，无启动口令。<br>
       <b>📶 智能传输提示</b>：本机导入 / 导出（不走网络）不再弹流量提醒；小文件直接执行；仅大文件（≥50MB）弹「操作提示」并显示文件大小与耗时提醒。<br>
+      <b>🏛️ 局 / 管理处到底管什么（v2.5.0 答疑）</b>：不是摆设，六个环节都在用——① <b>筛选</b>（管理处 / 管理所多选，直接决定地图与列表命中）；② <b>新增 / 编辑表单</b>的「局 / 管理处」下拉；③ <b>导出 CSV</b> 第 2 列「管理处」；④ <b>导出文件夹路径</b>（按 管理处 / 所 / 段--类型 分层）；⑤ <b>AI 机构问询</b>（按管理处分组统计）；⑥ <b>改名级联</b>（在设置里改管理处名，会同步更新所有建筑物的该字段）。<br>
+      <b>🔁 名单一致性（v2.5.0）</b>：「筛选 → 管理处 / 管理所」与「设置 → 机构层级与默认名称管理」用的是<b>同一份名单、同一顺序</b>（默认值 → 🔒 基础名单 → 其余），逐项对应；基础名单为「京密引水管理处」与 9 个所，不可删除/改名，自行添加的显示为「自定义」可改名或删除。<br>
       <b>🖼️ 图片预览增强</b>：电脑端鼠标<b>拖拽平移 + 滚轮缩放</b>（1~5 倍），手机端<b>双指缩放 + 拖动</b>，长按可调出菜单；键盘 + / − / 方向键 / 0 复位亦可用。<br>
       <b>📝 笔记导出</b>：备忘录 / 运维记录 / 游记支持一键<b>导出 Word（.doc）</b>与<b>导出 PDF</b>（走系统打印「另存为 PDF」）。<br>
       <b>🧭 对象智能检索</b>（菜单 → 对象智能检索）：<b>参数反查</b>（按参数键 / 值反查对象）、<b>分类统计</b>（按类型 / 管理所 / 参数汇总）、<b>类型定义入库</b>（向量化后参与检索）、<b>预案文档关联</b>、<b>生成说明文档</b>（可导出 Word / PDF）、<b>PDF 转 Word</b>。<br>
@@ -3094,6 +3135,12 @@ function popupHtml(r) {
   }
   // 版本变更：单一来源 APP_VER + 内置变更摘要（与文档同步维护）
   const CHANGELOG = [
+    ["v2.5.0", "2026-09-11", [
+      "水利端 mgmt 字段补齐：408 条建筑物全部填「京密引水管理处」（与现有数据一致；之前该字段半摆设，被内部计算忽略）",
+      "机构名单一致性：9 所标准名单在「筛选 → 管理所」与「设置 → 组织与类型管理 → 管理所」同一份、同顺序；筛选打开前自动清掉已失效的残留条件（pruneFilter），避免「幽灵条件」把结果筛空",
+      "添加建筑物表单：基础/默认值标签优化（⭐ 默认 / 🔒 基础名单 / 自定义 / 数据派生），用户能一眼看清每个值从哪来、是否可改",
+      "帮助文档同步：菜单间距、传输提示、备份导入导出与其它端完全一致"
+    ]],
     ["v2.4.9", "2026-09-11", ["启动口令保护（内部版）：首次启动校验启动口令，支持「记住本机 / 修改密码 / 忘记密码」；忘记口令提示改为「请联系软件开发者 / 管理员协助重置」，出厂口令仅见交付说明；对话框、帮助与提示中一律不出现明文口令", "智能传输提示：本机导入 / 导出（不走网络）不再弹流量提醒、小文件直接执行不打扰；仅大文件（≥50MB）改弹「操作提示」并显示文件大小与耗时提醒", "子菜单「隐藏 / 收藏」按钮与菜单文字间距拉大，避免误触（仍为长按触发 + 二次确认）", "修复导入「未找到名称列」：奥维导出的 GBK / ANSI 编码 CSV 不再乱码——按 BOM / UTF-8 / GB18030 / GBK / Big5 自动识别编码", "CSV 导出列规范化：第 8 列「参数说明」改为「Comment」，多参数分隔符由「;」改为「|」，并新增「文件夹」列（管理处 / 管理所 / 段--类型），与奥维导入格式对齐", "导入兼容自身导出：参数分隔符「|」「;」与半角「:」/ 全角「：」均可解析，导出的表格重新导入后参数可正常显示到建筑物详情", "ovkmz 导出备注：参数按「键 : 值|」并换行组织，与奥维原装格式一致", "管理所智能识别：9 所标准名单模糊匹配 + 潮河 / 水库特例归并 + 「站」归为所的下一级；导入、导出、筛选三处口径统一", "导出前实时统计「将导出 N 个建筑物 / M 张照片」（随范围与管理所勾选联动）；照片导出补 full → dataUrl → thumb 兜底链，三者皆空时明确提示并写入错误日志", "图片预览增强：电脑端支持鼠标拖拽平移 + 滚轮缩放（1~5 倍），手机端支持双指缩放 + 拖动 + 长按菜单，另支持键盘 + / - / 方向键 / 0 复位", "备忘录 / 运维记录新增「导出 Word」「导出 PDF」（PDF 走系统打印「另存为 PDF」）", "新增「对象智能检索」菜单组：参数反查 / 分类统计 / 类型定义入库（向量化）/ 预案文档关联 / 生成说明文档 / PDF 转 Word，并支持导出 Word 与 PDF"]],
     ["v2.4.8", "2026-09-07", ["知识库智能化：新增「知识库模糊检索」——错字/缺字/语序不同也能命中（如「跌水闸」可命中「跌水节制闸」），结果带相关度百分比，可对任一条目直接反向查询或标为存疑", "新增「提示词生成」：问题 + 知识库最相关片段 + 长期记忆自动拼装成完整提示词，可复制自用或直接投喂大模型；AI 查询结果新增「查看提示词」按钮", "新增「AI 记忆（Hermes）」：查询/纠错/存疑自动沉淀为记忆并在提示词中引用，支持查看、按关键词检索、一键清空（不影响知识条目）", "新增「存疑与反向查询」：不确定的内容可打存疑标记（标签：存疑/待核实），系统用其内容反向检索知识库给出最相关条目辅助核实；AI 查询结果可一键「标为存疑」", "修复重要缺陷：AI 调用时已生成知识库上下文却仍把原始问题发给模型（知识库等于没接上），现已真正随请求发送", "设置新增「通过 GitHub 升级」子菜单（内部版查 *-internal-4060、公开版查 *-public-4060，与网盘双通道隔离一致；私有库支持填 GitHub 只读 Token）", "菜单可隐藏：长按任意菜单项选择隐藏，设置中「恢复隐藏子菜单 / 隐藏子菜单列表」随时恢复，恢复入口受保护不会被自己锁死", "导出位置可自定义：设置「导出文件位置」预配置默认文件夹，导出前可询问（批量导出只问一次），知识库导出默认名改为「知识库YYYY-MM-DD」", "奥维 ovkmz 互通修复：导入剥除 UTF-8 BOM（原装文件不再报 xml 语法错误）、附件路径归一（照片不再只显示占位符）；导出照片目录对齐原装 ovatta/、参数分隔符对齐「键 : 值|」"]],
     ["v2.4.7", "2026-09-05", ["升级按钮与自动升级：设置菜单新增「检查新版本」一键检测（百度网盘）；发现新版自动下载安装包（直链走 fetch 分块下载+进度、下载完成提示安装位置；百度网盘分享页自动打开并备好提取码），可在升级对话框关闭自动下载", "古建改单通道：数据本身公开、两端全功能，取消内部分版——构建只出一套包（releases/），升级走 public 通道；水利/感知保持公开/内部双通道隔离不变", "发版自动上传百度网盘：构建收尾自动把安装包 + latest.json 上传到网盘「一张图发布/<应用>/<通道>/」目录（bdpan CLI；未登录时优雅跳过），并发起 30 天分享链接写回 latest.json"]],
