@@ -238,7 +238,7 @@
   function paramText(p) {
     const ks = Object.keys(p || {});
     if (!ks.length) return "";
-    return ks.map((k) => `${k} : ${p[k]}`).join(" | ");
+    return ks.map((k) => `${k} : ${p[k]}`).join("|\n");
   }
   function recordToPlacemark(r) {
     const params = r.params || {};
@@ -250,11 +250,11 @@
     // 照片：写入 zip 的 files/ 下；description 用 <img> 引用（自兼容）；OvAttr/OvAttaItem 文本路径（奥维真实导出结构）
     const imgs = (r.photos || []).map((ph, i) => {
       const fn = `${r.id}_${i}.jpg`;
-      return `<img src="files/${fn}" alt="${escapeXml(ph.caption || "")}"/>`;
+      return `<img src="ovatta/${fn}" alt="${escapeXml(ph.caption || "")}"/>`;
     }).join("<br/>");
     const ovAttr = (r.photos || []).length
       ? `<OvAttr><OvIcon>1</OvIcon><OvIconNum>0</OvIconNum><OvAttaList>` +
-        (r.photos || []).map((ph, i) => `<OvAttaItem>files/${escapeXml(r.id)}_${i}.jpg</OvAttaItem>`).join("") +
+        (r.photos || []).map((ph, i) => `<OvAttaItem>ovatta/${escapeXml(r.id)}_${i}.jpg</OvAttaItem>`).join("") +
         `</OvAttaList></OvAttr>`
       : "";
     const desc = escapeXml(paramText(params) || r.description || "");
@@ -298,7 +298,7 @@ ${places}
       (r.photos || []).forEach((ph, i) => {
         if (ph.dataUrl && ph.dataUrl.startsWith("data:") && ph.dataUrl.includes(";base64,")) {
           const b64 = ph.dataUrl.split(",")[1];
-          files.push({ name: `files/${r.id}_${i}.jpg`, data: b64ToBytes(b64) });
+          files.push({ name: `ovatta/${r.id}_${i}.jpg`, data: b64ToBytes(b64) });
         }
       });
     }
@@ -306,9 +306,17 @@ ${places}
   }
 
   // ---------- 解析 KML -> 记录 ----------
+  // 奥维原装 ovkmz 的 doc.kml 常带 UTF-8 BOM：DOMParser 遇开头 \uFEFF 会直接 parsererror，
+  // 表现为 deb 端「导入失败，kml格式无法解析（xml语法错误）」。故解析前统一剥离 BOM 与前置空白。
+  function stripBom(t) { return String(t == null ? "" : t).replace(/^\uFEFF/, "").replace(/^\s+/, ""); }
   function parseKmlToRecords(kmlText) {
-    const xml = new DOMParser().parseFromString(kmlText, "application/xml");
-    if (xml.getElementsByTagName("parsererror").length) throw new Error("KML 解析失败");
+    const clean = stripBom(kmlText);
+    let xml = new DOMParser().parseFromString(clean, "application/xml");
+    if (xml.getElementsByTagName("parsererror").length) {
+      // 兜底：剔除非法 XML 控制字符后重试（奥维偶发混入 \x0B/\x0C 等）
+      xml = new DOMParser().parseFromString(clean.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ""), "application/xml");
+      if (xml.getElementsByTagName("parsererror").length) throw new Error("KML 解析失败（XML 语法错误）");
+    }
     const pms = xml.getElementsByTagName("Placemark");
     const out = [];
     for (const pm of pms) {
@@ -388,26 +396,71 @@ ${places}
   }
 
   // ---------- 导入 ----------
+
+  // ---------- v2.4.9 照片显示加固：MIME 魔数嗅探 + 三字段必填 ----------
+  function mimeOfBytes(b) {
+    if (!b || b.length < 4) return "image/jpeg";
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "image/gif";
+    if (b[0] === 0x42 && b[1] === 0x4d) return "image/bmp";
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b.length > 11 &&
+        String.fromCharCode(b[8], b[9], b[10], b[11]) === "WEBP") return "image/webp";
+    return "image/jpeg";
+  }
+  function photoSrcOf(p) { return (p && (p.full || p.dataUrl || p.thumb)) || ""; }
+  // 统一入口：任何来源（ovkmz / zip / 原生）落库前都保证 thumb/full/dataUrl 至少一个可用
+  async function pushKmzPhoto(r, ref, data) {
+    const cap = String(ref || "").split("/").pop();
+    const raw = "data:" + mimeOfBytes(data) + ";base64," + bytesToB64(data);
+    let thumb = raw, full = raw, hash = "";
+    try {
+      if (typeof ImgUtil !== "undefined" && ImgUtil && ImgUtil.compressPhoto) {
+        const cp = await ImgUtil.compressPhoto(data);
+        if (cp && cp.thumb && String(cp.thumb).length > 30) thumb = cp.thumb;
+        if (cp && cp.full && String(cp.full).length > 30) full = cp.full;
+        if (cp && cp.hash) hash = cp.hash;
+      }
+    } catch (e) { /* 压缩失败不阻断：退回原图，保证一定显示得出来 */ }
+    if (!full || String(full).length < 30) full = raw;
+    if (!thumb || String(thumb).length < 30) thumb = full;
+    r.photos = r.photos || [];
+    r.photos.push({ caption: cap, thumb: thumb, full: full, dataUrl: full, hash: hash, mime: mimeOfBytes(data) });
+  }
+
   async function importKmzBuffer(buf) {
     const files = await unzip(new Uint8Array(buf).buffer);
     const kmlName = Object.keys(files).find((n) => n.toLowerCase().endsWith(".kml")) || "doc.kml";
     const kmlText = strFromUtf8(files[kmlName] || new Uint8Array(0));
     const recs = parseKmlToRecords(kmlText);
     // 收集 zip 内所有图片（按全路径与 basename 双索引），兼容奥维不规则命名
+    // 路径归一：反斜杠→正斜杠、去掉 ./ 前缀、去 URL 编码，避免安卓解压器命名差异导致查表落空
+    const normPath = (p) => {
+      let s = String(p || "").replace(/\\/g, "/").replace(/^\.\//, "").trim();
+      try { if (/%[0-9A-Fa-f]{2}/.test(s)) s = decodeURIComponent(s); } catch (e) { }
+      return s;
+    };
     const byFull = {}, byName = {};
     for (const name of Object.keys(files)) {
       if (/\.(jpe?g|png|gif|bmp|webp)$/i.test(name)) {
-        byFull[name] = files[name];
-        const bn = name.split("/").pop();
+        const np = normPath(name);
+        byFull[np] = files[name];
+        byFull[np.toLowerCase()] = files[name];
+        const bn = np.split("/").pop();
         (byName[bn] = byName[bn] || []).push(files[name]);
+        (byName[bn.toLowerCase()] = byName[bn.toLowerCase()] || []).push(files[name]);
       }
     }
     const resolveImg = (ref) => {
       if (!ref) return null;
-      if (byFull[ref]) return byFull[ref];
-      if (byFull["files/" + ref]) return byFull["files/" + ref];
-      const bn = ref.split("/").pop();
+      const r0 = normPath(ref);
+      // 全路径 > files/ 前缀 > 归一后 basename > 大小写不敏感 basename
+      if (byFull[r0]) return byFull[r0];
+      if (byFull[r0.toLowerCase()]) return byFull[r0.toLowerCase()];
+      if (byFull["files/" + r0]) return byFull["files/" + r0];
+      let bn = r0.split("/").pop();
       if (byName[bn] && byName[bn].length) return byName[bn][0];
+      if (byName[bn.toLowerCase()] && byName[bn.toLowerCase()].length) return byName[bn.toLowerCase()][0];
       return null;
     };
     // 还原照片：奥维/本APP 引用路径都能解析（全路径 > files/前缀 > basename 兜底）
@@ -416,15 +469,7 @@ ${places}
       r.photos = [];
       for (const ref of (r.photoFiles || [])) {
         const data = resolveImg(ref);
-        if (data && !seen.has(data)) {
-          seen.add(data);
-          try {
-            const cp = await ImgUtil.compressPhoto(data);
-            r.photos.push({ caption: ref.split("/").pop(), thumb: cp.thumb, full: cp.full, dataUrl: cp.full, hash: cp.hash });
-          } catch (e) {
-            r.photos.push({ caption: ref.split("/").pop(), dataUrl: "data:image/jpeg;base64," + bytesToB64(data) });
-          }
-        }
+        if (data && !seen.has(data)) { seen.add(data); await pushKmzPhoto(r, ref, data); }
       }
     }
     return recs;
@@ -493,6 +538,15 @@ ${places}
     for (const r of records) lines.push(use.map((c) => (c.k === "lon" || c.k === "lat") ? c.g(r) : esc(c.g(r))).join(","));
     return "\uFEFF" + lines.join("\n");
   }
+  // v2.4.9-C：奥维风格的文件夹路径（/根/管理所/段--类型），导入时可按层级还原 管理所/段/类型
+  function folderPathOf(r) {
+    var o = normOffice(r.office) || "";
+    if (!o) return "";
+    var seg = r.station || "", bt = r.btype || "";
+    var tail = (seg && bt) ? (seg + "--" + bt) : (seg || bt);
+    return "/" + (r.mgmt || "基础信息") + "/" + o + (tail ? "/" + tail : "");
+  }
+
   // CSV 导出：与「水利工程基础信息一张图_建筑物_*.csv」样本格式对齐（独立列，非 folder 编码），
   // 保证 APP 导出的 CSV 可再导入、且与用户样本文件一致兼容（问题二）。
   function buildCsv(records, cols) {
@@ -505,7 +559,8 @@ ${places}
       { k: "btype", t: "建筑物类型", g: (r) => r.btype || "" },
       { k: "lat", t: "纬度", g: (r) => r.lat },
       { k: "lon", t: "经度", g: (r) => r.lon },
-      { k: "params", t: "参数说明", g: (r) => Object.keys(r.params || {}).map((x) => x + " : " + (r.params[x] == null ? "" : r.params[x])).join(" ; ") },
+      { k: "folder", t: "文件夹", g: (r) => folderPathOf(r) },
+      { k: "params", t: "Comment", g: (r) => Object.keys(r.params || {}).map((x) => x + " : " + (r.params[x] == null ? "" : r.params[x])).join(" | ") },
       { k: "inspect", t: "巡视次数", g: (r) => (r.inspect != null ? r.inspect : 0) },
     ];
     const use = cols && cols.length ? C.filter((c) => cols.includes(c.k)) : C;
@@ -515,8 +570,48 @@ ${places}
     return "\uFEFF" + lines.join("\n");
   }
 
+  // ---------- v2.4.8：导出路径（文件夹 + 文件名），所有导出菜单共用 ----------
+  var LS_EDIR = "yzt_export_dir_v1";
+  var LS_EASK = "yzt_export_ask_v1";
+  function exportDir() { try { return localStorage.getItem(LS_EDIR) || ""; } catch (e) { return ""; } }
+  function setExportDir(d) { try { localStorage.setItem(LS_EDIR, d || ""); } catch (e) {} }
+  function exportAsk() { try { return localStorage.getItem(LS_EASK) !== "0"; } catch (e) { return true; } }
+  function setExportAsk(v) { try { localStorage.setItem(LS_EASK, v ? "1" : "0"); } catch (e) {} }
+  function joinExportPath(dir, name) {
+    var d = String(dir || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    var n = String(name || "").replace(/\\/g, "/").replace(/^\.\//, "");
+    return d ? d + "/" + n : n;
+  }
+  var _askOpen = false;   // 同一批导出（如照片批量）只问一次，后续沿用
+  // 设置子菜单「导出文件位置」：预配置默认文件夹与是否每次询问
+  function openExportPathSettings() {
+    var g = window;
+    if (typeof g.openModal !== "function") { if (g.alert) g.alert("主程序未就绪"); return; }
+    var html = '<div class="hint">设置导出文件的<b>默认文件夹</b>与<b>是否每次导出前询问文件名</b>。'
+      + '所有导出菜单（照片 / CSV / KMZ / 知识库 / 备忘录 / 升级备份…）共用此设置。</div>'
+      + '<div class="field"><label>默认文件夹（留空=系统下载目录；支持多级，如 一张图导出/2026）</label>'
+      + '<input id="epDir" class="inp" value="' + exportDir().replace(/"/g, "&quot;") + '" placeholder="例如：一张图导出"></div>'
+      + '<div class="field"><label>文件名规则</label>'
+      + '<input id="epName" class="inp" value="默认按各导出功能给出（如 知识库2026-09-07.md）" disabled></div>'
+      + '<div class="field"><label class="chip" style="cursor:pointer"><input type="checkbox" id="epAsk"'
+      + (exportAsk() ? " checked" : "") + ' style="vertical-align:-2px"> 每次导出前询问文件夹与文件名</label></div>'
+      + '<div class="hint">提示：安卓端询问对话框里的文件夹会传给原生保存（SAF）；Win/UOS/浏览器端作为下载子目录。</div>';
+    g.openModal("导出文件位置", html,
+      '<button class="btn ghost" id="epCancel">取消</button><button class="btn primary" id="epSave">保存</button>');
+    var c = g.document.getElementById("epCancel"); if (c) c.onclick = function () { g.closeModal(); };
+    var s = g.document.getElementById("epSave");
+    if (s) s.onclick = function () {
+      var d = (g.document.getElementById("epDir") || {}).value || "";
+      var a = g.document.getElementById("epAsk");
+      setExportDir(d.trim()); setExportAsk(a ? a.checked : true);
+      g.closeModal(); if (typeof g.toast === "function") g.toast("已保存导出位置设置");
+    };
+  }
+  if (global.__EXT_ACTS__) { } else { global.__EXT_ACTS__ = {}; }
+  global.__EXT_ACTS__.exportPath = openExportPathSettings;
+
   // ---------- 下载 ----------
-  function downloadBytes(filename, bytes, mime) {
+  function saveBytesNow(filename, bytes, mime) {
     // APK：经原生 SAF 选择器保存（用户可自定义目录，默认文档/下载）；浏览器/PWA 走标准下载
     // 关键修复：整包 base64 可能远超 Binder 1MB 事务上限 → 单次 JSInterface 调用会 TransactionTooLarge → 写入 0 字节。
     // 改为分块（exportStart/Append/Commit）累积，彻底避开 Binder 限制；写完由原生回调 APP.onExportResult 决定成败提示。
@@ -544,6 +639,41 @@ ${places}
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  // v2.4.8：导出前询问文件夹 + 文件名（同一批导出只问一次，后续沿用）
+  function downloadBytes(filename, bytes, mime) {
+    var dir = exportDir();
+    var full = joinExportPath(dir, filename);
+    var g = window;
+    if (!exportAsk() || _askOpen || typeof g.openModal !== "function") { saveBytesNow(full, bytes, mime); return; }
+    _askOpen = true;
+    var parts = String(full).split("/");
+    var defName = parts.pop() || "";
+    var defDir = parts.join("/");
+    var html = '<div class="hint">确认导出位置与文件名（同一批后续文件将沿用此文件夹）。</div>'
+      + '<div class="field"><label>文件夹（留空=系统下载目录）</label>'
+      + '<input id="dlDir" class="inp" value="' + defDir.replace(/"/g, "&quot;") + '" placeholder="例如：一张图导出/知识库"></div>'
+      + '<div class="field"><label>文件名</label>'
+      + '<input id="dlName" class="inp" value="' + defName.replace(/"/g, "&quot;") + '"></div>';
+    var done = function (ok) {
+      _askOpen = false;
+      if (!ok) { if (typeof g.toast === "function") g.toast("已取消导出"); return; }
+      var dEl = g.document.getElementById("dlDir"), nEl = g.document.getElementById("dlName");
+      var d = ((dEl && dEl.value) || "").trim();
+      var n = ((nEl && nEl.value) || "").trim() || defName;
+      setExportDir(d);
+      saveBytesNow(joinExportPath(d, n), bytes, mime);
+      if (typeof g.toast === "function") g.toast("已导出：" + joinExportPath(d, n));
+    };
+    try {
+      g.openModal("导出到", html,
+        '<button class="btn ghost" id="dlCancel">取消</button><button class="btn primary" id="dlOk">导出</button>');
+      var cc = g.document.getElementById("dlCancel");
+      if (cc) cc.onclick = function () { g.closeModal(); done(false); };
+      var oo = g.document.getElementById("dlOk");
+      if (oo) oo.onclick = function () { g.closeModal(); done(true); };
+    } catch (e) { _askOpen = false; saveBytesNow(full, bytes, mime); }
   }
   function downloadText(filename, text, mime) {
     downloadBytes(filename, utf8(text), mime || "text/plain;charset=utf-8");
@@ -631,6 +761,20 @@ ${places}
     return xlsBytesFromMatrix(rows);
   }
 
+  // v2.4.9-C：文本解码自动识别（BOM / UTF-8 / GB18030）
+  // 奥维导出的 CSV/KML 常见为 GBK（ANSI）：按 UTF-8 硬读会整表乱码，表头「名称」找不到 →
+  // 报「未找到"名称"列（name/名称）」。此处先按 UTF-8 严格解码，失败再退 GB18030/GBK/Big5。
+  function decodeText(bytes) {
+    var u = (bytes && bytes.length !== undefined) ? bytes : new Uint8Array(bytes || []);
+    if (u.length >= 3 && u[0] === 0xEF && u[1] === 0xBB && u[2] === 0xBF) return strFromUtf8(u.subarray(3));
+    if (u.length >= 2 && u[0] === 0xFF && u[1] === 0xFE) { try { return new TextDecoder("utf-16le").decode(u); } catch (e) {} }
+    if (u.length >= 2 && u[0] === 0xFE && u[1] === 0xFF) { try { return new TextDecoder("utf-16be").decode(u); } catch (e) {} }
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(u); } catch (e) {}
+    var encs = ["gb18030", "gbk", "big5"];
+    for (var i = 0; i < encs.length; i++) { try { return new TextDecoder(encs[i]).decode(u); } catch (e2) {} }
+    return strFromUtf8(u);
+  }
+
   // CSV -> 矩阵
   function csvToMatrix(text) {
     var rows = [], i = 0, field = "", row = [], inq = false;
@@ -677,7 +821,17 @@ ${places}
       var inspectRaw = gi(row, ["巡视次数", "Inspect"]);
       var inspect = inspectRaw === "" ? 0 : (parseInt(inspectRaw, 10) || 0);
       var params = {};
-      if (descText) descText.split(/[;\n]/).forEach(function (ln) { if (ln.indexOf(":") >= 0) { var a = ln.split(":"); var k = a[0].trim(); var v = a.slice(1).join(":").trim(); params[k] = v; } });
+      // v2.4.9-C：条目分隔符同时接受 | ; 换行（奥维 comment 用 |，本 APP 历史导出用 ;，清源河用 ;）
+      //            键值分隔同时接受 ASCII ":" 与全角 "："；空值键（如「备注:」）保留
+      if (descText) descText.split(/[|;\r\n]+/).forEach(function (ln) {
+        var line = String(ln == null ? "" : ln).trim();
+        if (!line) return;
+        var k = "", v = "";
+        if (line.indexOf(":") >= 0) { var a = line.split(":"); k = a[0].trim(); v = a.slice(1).join(":").trim(); }
+        else if (line.indexOf("：") >= 0) { var b = line.split("："); k = b[0].trim(); v = b.slice(1).join("：").trim(); }
+        else return;
+        if (k) params[k] = v;
+      });
       out.push({
         id: name + "_" + lon.toFixed(5) + "_" + lat.toFixed(5), name: name, lon: lon, lat: lat,
         office: office, mstation: mstation, station: station, btype: btype,
@@ -890,7 +1044,8 @@ ${places}
   global.IO = {
     escapeXml, crc32, zipStore, unzip, unzipStream, unzipCount, buildKML, buildCsv, buildChaohe, recordsToKmzBytes,
     parseKmlToRecords, parseGpxToRecords, parseJsonToRecords, importKmzBuffer, parseCsvToRecords,
-    downloadBytes, downloadText, genId, bytesToB64, b64ToBytes, utf8,
+    downloadBytes, downloadText, openExportPathSettings, exportDir, setExportDir, exportAsk, setExportAsk, genId, bytesToB64, b64ToBytes, utf8,
+    decodeText, // v2.4.9-C 文本编码自动识别
     sha256Hex, // 内容去重哈希（v1.8.0 定义；曾漏导出导致导入 ovkmz 报「IO.sha256Hex is not a function」）
     sha256: { hex: sha256Hex }, // 兼容别名（对象式调用 io.sha256.hex() 也可用）
     csvOf: buildCsv, chaoheOf: buildChaohe,
