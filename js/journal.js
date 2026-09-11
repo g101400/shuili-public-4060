@@ -202,7 +202,9 @@
       var foot = '<button class="btn ghost" id="jrClose">关闭</button>' +
         '<button class="btn ghost" id="jrSelAll">全选</button>' +
         '<button class="btn" id="jrExpMd">导出 Markdown</button>' +
-        '<button class="btn" id="jrExpJson">导出 JSON</button>';
+        '<button class="btn" id="jrExpJson">导出 JSON</button>' +
+        '<button class="btn" id="jrExpDoc">导出 Word</button>' +
+        '<button class="btn" id="jrExpPdf">导出 PDF</button>';
       openModal("我的" + CFG.label + "（" + list.length + "）", body, foot);
 
       function render() {
@@ -246,6 +248,8 @@
       bind("jrSelAll", "click", function () { each(el("jrList").querySelectorAll(".jr-chk"), function (c) { c.checked = true; }); });
       bind("jrExpMd", "click", function () { doExport(selected(), "md"); });
       bind("jrExpJson", "click", function () { doExport(selected(), "json"); });
+      bind("jrExpDoc", "click", function () { doExport(selected(), "doc"); });
+      bind("jrExpPdf", "click", function () { doExport(selected(), "pdf"); });
       render();
     }).catch(function (e) { fail("load", e); });
   });
@@ -263,6 +267,17 @@
       showExport(JSON.stringify(data, null, 2), "json", "我的" + CFG.label + "_" + ts + ".json");
       return;
     }
+    if (fmt === "doc") {
+      var dn = "我的" + CFG.label + "_" + ts + ".doc";
+      downloadText(dn, jrDocHtml("我的" + CFG.label, jrArticleHtml(items)), "application/msword");
+      toast("已导出 Word：" + dn);
+      return;
+    }
+    if (fmt === "pdf") {
+      jrPreviewDoc("我的" + CFG.label, jrArticleHtml(items), true);
+      toast("已打开打印预览：在打印对话框里选「另存为 PDF」即可导出 PDF");
+      return;
+    }
     var md = "# 我的" + CFG.label + "（" + items.length + " 条 · 导出 " + ts + "）\n\n";
     items.forEach(function (e, i) {
       var sum = e.text != null ? e.text : (e.html ? htmlToMdFallback(e.html) : "");
@@ -273,6 +288,45 @@
     });
     showExport(md, "md", "我的" + CFG.label + "_" + ts + ".md");
   });
+
+  // v2.4.9-D：备忘录 / 运维记录 / 游记 → Word(.doc) / PDF（打印后另存为 PDF）
+  function jrArticleHtml(items) {
+    var h = "";
+    each(items, function (e, i) {
+      h += "<h2>" + (i + 1) + ". " + esc(e.title || "(无标题)") + "</h2>";
+      h += '<p class="meta">' + (e.objName ? "绑定" + CFG.objLabel + "：" + esc(e.objName) : "") +
+        (e.time ? "　记录时间：" + esc(dateOnly(e.time)) : "") + "</p>";
+      h += (e.html && String(e.html).replace(/\s/g, "")) ? e.html : ("<p>" + esc(e.text || "") + "</p>");
+      h += '<hr style="border:none;border-top:1px dashed #bbb;margin:14px 0">';
+    });
+    return h;
+  }
+  function jrDocHtml(title, body) {
+    return '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+      + '<head><meta charset="utf-8"><title>' + esc(title) + "</title>"
+      + "<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->"
+      + '<style>@page{size:A4;margin:2cm}body{font-family:"Microsoft YaHei",SimSun,serif;font-size:14px;line-height:1.8;color:#111}'
+      + 'h1{font-size:20px;text-align:center}h2{font-size:16px;margin:16px 0 6px}.meta{color:#666;font-size:12px;margin:0 0 8px}'
+      + 'img{max-width:100%}table{border-collapse:collapse;width:100%}td,th{border:1px solid #999;padding:5px 8px;font-size:13px}</style></head>'
+      + "<body><h1>" + esc(title) + "</h1>" + body + "</body></html>";
+  }
+  function downloadText(name, text, mime) {
+    try {
+      var blob = new Blob([text], { type: (mime || "text/plain") + ";charset=utf-8" });
+      var url = URL.createObjectURL(blob); var a = document.createElement("a");
+      a.href = url; a.download = name; document.body.appendChild(a); a.click();
+      setTimeout(function () { try { URL.revokeObjectURL(url); a.remove(); } catch (_) {} }, 1500);
+    } catch (e) { toast("本环境不支持直接下载，请用「复制全部」"); }
+  }
+  function jrPreviewDoc(title, body, autoPrint) {
+    var w = window.open("", "_blank");
+    if (!w) { toast("浏览器拦截了新窗口，请允许弹窗后重试"); return; }
+    var btn = '<div style="position:fixed;right:16px;bottom:16px;z-index:9">'
+      + '<button onclick="window.print()" style="padding:10px 16px;font-size:14px;border-radius:8px;border:1px solid #888;background:#fff;cursor:pointer">打印 / 另存为 PDF</button></div>';
+    w.document.write(jrDocHtml(title, body) + btn);
+    w.document.close();
+    if (autoPrint) { try { w.focus(); setTimeout(function () { try { w.print(); } catch (_) {} }, 350); } catch (_) {} }
+  }
 
   function htmlToMdFallback(html) { var d = document.createElement("div"); d.innerHTML = html || ""; return (d.innerText || d.textContent || "").replace(/\n{3,}/g, "\n\n").trim(); }
 
