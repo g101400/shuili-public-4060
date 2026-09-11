@@ -166,7 +166,7 @@
   let lastCenter = null, myLoc = null, myLocMarker = null;
   let measureMode = false, measurePts = [], measureLine = null;
   let nearbyCenter = null, nearbyRadius = null, nearbyCircle = null, nearbyBtypes = [];
-  const DEFAULT_CENTER = [40.30876, 116.61107]; // 明珠水库所 质心
+  const DEFAULT_CENTER = [40.30876, 116.61107]; // 怀柔水库所 质心
   const DEFAULT_ZOOM = 12;
   const filter = { bureau: [], mgmt: [], office: [], station: [], btype: [], q: "", photo: { mode: "all", min: 0 } };
   let pickMode = false, pendingLatLng = null, editId = null, formPhotos = [], formColor = "#3da9fc", formShape = "drop";
@@ -367,10 +367,10 @@
     applyDims();
   }
   // ---------- 组织层级配置（局/管理处/所/站/段 · 持久化 + 双向联动 · v2.4 五级化）----------
-  const BASE_OFFICES = ["地下水源所", "温汤所", "云龙山所", "翠屏山所", "埝湾所", "水库所", "北台峪所", "柳林庄所", "清源河所"];
+  const BASE_OFFICES = ["地下水源所", "温泉所", "龙山所", "史山所", "埝头所", "水库所", "北台上所", "西田各庄所", "潮河所"];
   const BASE_OFFICES_SET = new Set(BASE_OFFICES);
   // v2.4.1：管理所可以是数组（多个预选）；段默认可为空；段和所独立，段名不必跟随所名
-  const DEFAULT_ORG = { bureau: "水利工程管理中心", mgmt: "清源灌区管理处", office: ["水库所"], station: "", section: "" };
+  const DEFAULT_ORG = { bureau: "水利工程管理中心", mgmt: "京密引水管理处", office: ["水库所"], station: "", section: "" };
   const ORG_LEVELS = [
     { key: "bureau", label: "局", field: "bureau" },
     { key: "mgmt", label: "管理处", field: "mgmt" },
@@ -473,7 +473,7 @@
       layerType = (s.layer === "img") ? "img" : "vec";
       lastCenter = s.center || null;
     } else {
-      // 首次打开：默认「清源灌区管理处 + 水库所」(v2.4.3 管理处默认可多选，默认局管理处生效)，仅载该子集→开图更快不卡顿
+      // 首次打开：默认「京密引水管理处 + 水库所」(v2.4.3 管理处默认可多选，默认局管理处生效)，仅载该子集→开图更快不卡顿
       filter.mgmt = [orgDefault("mgmt")];
       filter.office = (Array.isArray(orgDefault("office")) ? orgDefault("office") : [orgDefault("office")]).filter(Boolean);
       basemapOn = false;
@@ -775,7 +775,7 @@ function popupHtml(r) {
       (arr.length ? arr.map((v) => `<span class="chip ${sel.includes(v) ? "on" : ""}" data-grp="${title}" data-v="${esc(v)}">${esc(v)}</span>`).join("") : `<span class="hint">无</span>`) +
       `</div></div>`;
     const html =
-      `<div class="hint">可多选：建筑物类型（如 节制闸 / 跌水）、管理处与管理所（如 温汤所）。选择管理所会自动定位到其范围中心；不选则显示全部。</div>` +
+      `<div class="hint">可多选：建筑物类型（如 节制闸 / 跌水）、管理处与管理所（如 温泉所）。选择管理所会自动定位到其范围中心；不选则显示全部。</div>` +
       (kwHist.length ? `<div class="fgroup"><div class="ftitle collapsible" id="kwHistTog" style="cursor:pointer">🔎 关键词历史（<b class="cnt">${kwHist.length}</b>）<span class="tg">＋</span></div><div class="chips" id="kwHistBox" style="display:none">` + kwHist.map((k) => `<span class="chip kw" data-kw="${esc(k)}">${esc(k)}</span>`).join("") + `</div></div>` : "") +
       (filter.q && filter.q.trim() ? `<div class="fqhint">🔎 当前查询关键词：<b>${esc(filter.q.trim())}</b><span class="fqsub">（筛选在此基础上叠加，下方命中数已计入）</span></div>` : "") +
       group("建筑物类型", DIMS.btypes, filter.btype) +
@@ -1506,15 +1506,15 @@ function popupHtml(r) {
   function closeZipProgress() { if (zipProgOpen) { closeModal(); zipProgOpen = false; } }
   // ---------- 智能模糊匹配工具（② 错字/多字/漏字/部分词；⑥ 文件夹上下文）----------
   function norm(s) { return (s || "").trim().toLowerCase().replace(/[\s_\-()（）．.]/g, ""); }
-  // 管理所名称统一（需求）：去「管理」两字 + 清源河/水库特例；导入/导出/查询/筛选 全链路一致
-    // ---------- v2.4.9 管理所智能识别：9 所标准名单模糊匹配 + 清源河/水库特例 + 「站」归为所的下一级 ----------
+  // 管理所名称统一（需求）：去「管理」两字 + 潮河/水库特例；导入/导出/查询/筛选 全链路一致
+    // ---------- v2.4.9 管理所智能识别：9 所标准名单模糊匹配 + 潮河/水库特例 + 「站」归为所的下一级 ----------
   function smartOffice(name) {
     const raw = String(name == null ? "" : name).trim();
     if (!raw) return { office: "", station: "", changed: false };
     const list = (typeof BASE_OFFICES !== "undefined" && BASE_OFFICES.length) ? BASE_OFFICES : [];
     const SET = (typeof BASE_OFFICES_SET !== "undefined" && BASE_OFFICES_SET.has) ? BASE_OFFICES_SET : new Set(list);
     if (SET.has(raw)) return { office: raw, station: "", changed: false };
-    // ② 含标准所名（如「清源河所一号站」「明珠水库所」）→ 所 + 剩余部分若为站则下沉
+    // ② 含标准所名（如「潮河所一号站」「怀柔水库所」）→ 所 + 剩余部分若为站则下沉
     for (let i = 0; i < list.length; i++) {
       if (raw.indexOf(list[i]) >= 0) {
         const st = raw.replace(list[i], "").trim();
@@ -1523,7 +1523,7 @@ function popupHtml(r) {
     }
     // ③ 站不是所：以「站」结尾且不含标准所名 → 归为站（所留空），不进所名单
     if (/站$/.test(raw) || /管理站$/.test(raw)) return { office: "", station: raw, changed: true };
-    // ④ 去噪声后模糊匹配：温汤管理所→温汤、清源河总干渠管理所→清源河
+    // ④ 去噪声后模糊匹配：温泉管理所→温泉、潮河总干渠管理所→潮河
     const core = raw.replace(/管理所|管理处|管理|总干渠|所|站/g, "");
     for (let i = 0; i < list.length; i++) {
       const oc = list[i].replace(/所$/, "");
@@ -1554,17 +1554,17 @@ function popupHtml(r) {
   // ---------- v2.4 zip 三级匹配：压缩包文件名 → zip 内文件夹 → 照片文件名 ----------
   let BATCH_ZIP_NAME = ""; // 当前导入 zip 的文件名（不含扩展名）；Android 原生经 window.onZipName 下发，Web 在选择器回调内设置
   window.onZipName = function (name) { BATCH_ZIP_NAME = String(name || "").replace(/\.(zip|7z)$/i, ""); };
-  // 压缩包名/文本 → 机构匹配（所→站→段→管理处→局，最具体优先）；命中返回限定范围。如 翠屏山.zip → 优先匹配 翠屏山所
+  // 压缩包名/文本 → 机构匹配（所→站→段→管理处→局，最具体优先）；命中返回限定范围。如 史山.zip → 优先匹配 史山所
   function matchOrgScope(text, allowTiers) {
     if (!text) return null;
-    // 兼容「含路径/扩展名」的压缩包文件名：先取 basename、再去扩展名（如 /x/翠屏山.zip 或 翠屏山.zip → 翠屏山）
+    // 兼容「含路径/扩展名」的压缩包文件名：先取 basename、再去扩展名（如 /x/史山.zip 或 史山.zip → 史山）
     const base = String(text).split(/[\\/]/).pop() || String(text);
     const t = norm(base.replace(/\.(zip|7z|rar|tar|gz|tgz)$/i, ""));
     if (!t) return null;
     // v2.4.3 层次递进匹配（用户原话核心）：
     //   zip 名命中某级后，zip 内文件夹应从「命中级的下一级」开始向下匹配
-    //   如 zip=翠屏山.zip → 命中 所(翠屏山所) → 文件夹只从 站/段 继续收窄
-    //      zip=清源灌区管理处.zip → 命中 处(mgmt) → 文件夹从 所/站/段 继续收窄
+    //   如 zip=史山.zip → 命中 所(史山所) → 文件夹只从 站/段 继续收窄
+    //      zip=京密引水管理处.zip → 命中 处(mgmt) → 文件夹从 所/站/段 继续收窄
     const TIER_ORDER = ["bureau", "mgmt", "office", "station", "section"];
     // allowTiers：允许参与匹配的层级数组；null/undefined = 全部层级（zip 名首次匹配用）
     const hit = (val) => {
@@ -1584,7 +1584,7 @@ function popupHtml(r) {
     if (!cands.length) return null;
     const tier = (s) => TIER_ORDER.indexOf(s);
     // 注意：TIER_ORDER 下标 bureau=0…section=4，越靠后越具体 → 排序用 tier 降序（具体级优先），与 v2.4.1 语义一致
-    // 同分且同名（本数据 office 与 station 常同名，如 翠屏山所）：zip 以「管理所」命名，应锚定 office 层级（标签/下钻才正确）
+    // 同分且同名（本数据 office 与 station 常同名，如 史山所）：zip 以「管理所」命名，应锚定 office 层级（标签/下钻才正确）
     const SCOPE_PREF = { office: 3, station: 2, section: 1, mgmt: 2, bureau: 1 };
     cands.sort((a, b) => (b.score - a.score) || ((SCOPE_PREF[b.scope] || 0) - (SCOPE_PREF[a.scope] || 0)) || (tier(b.scope) - tier(a.scope)) || (b.val.length - a.val.length));
     const top = cands[0];
@@ -1603,7 +1603,7 @@ function popupHtml(r) {
     if (!zipScope || !zipScope.nextTiers) return matchOrgScope(text);
     const lower = matchOrgScope(text, zipScope.nextTiers);
     if (lower) return lower;
-    // 下级无命中 → 退回在 zip 范围内按同层级再找一次（如 翠屏山/翠屏山所 这种重复写法）
+    // 下级无命中 → 退回在 zip 范围内按同层级再找一次（如 史山/史山所 这种重复写法）
     return matchOrgScope(text, [zipScope.tier]);
   }
   // 文件夹/分类上下文：路径各段（含子文件夹）模糊命中 管理所 或 建筑物类型 → 限定候选范围（item ⑥；v2.4 支持在 zip 名命中范围内继续收窄）
@@ -1648,10 +1648,10 @@ function popupHtml(r) {
     return out;
   }
   // #4 增强：zip 名/机构范围已收窄到某所（zipScope）后，用「文件夹名（最深层具体段）」作为建筑物名在范围内模糊匹配。
-  // 例：翠屏山.zip 内 分水闸/三号线分水闸/照片/三号线分水闸/IMG_6857.jpg → 在翠屏山所范围内匹配「三号线分水闸」→ 三号线
+  // 例：史山.zip 内 分水闸/三号线分水闸/照片/三号线分水闸/IMG_6857.jpg → 在史山所范围内匹配「三号线分水闸」→ 三号线
   // 跳过 照片/分水闸 等通用词段，只取能指向具体建筑物的段；无具体段则不返回（回落到全局兜底）。
   // 文件夹名别名表（采集异写/笔误 → 标准建筑物名）：zip 文件夹段先经此表归一，再跑建筑物匹配。可扩展。
-  // 例：翠屏山.zip 中「三号线分水闸」(line) 实为「三扬分水闸」(raise)，归一后精确命中，满足用户预期。
+  // 例：史山.zip 中「三号线分水闸」(line) 实为「三扬分水闸」(raise)，归一后精确命中，满足用户预期。
   const FOLDER_ALIAS = {
     "三号线分水闸": "三扬分水闸",
   };
@@ -1678,7 +1678,7 @@ function popupHtml(r) {
     BATCH_STATE.active = false;
     busy("正在匹配照片，请稍后…"); // 加载/处理阶段先显「请稍后」，避免误以为卡死（item 2）
     const photos = pendingBatch.photos; pendingBatch.photos = [];
-    // v2.4 三级匹配第一级：zip 文件名 → 机构范围（翠屏山.zip → 翠屏山所）；后续文件夹/照片匹配都在该范围内收窄
+    // v2.4 三级匹配第一级：zip 文件名 → 机构范围（史山.zip → 史山所）；后续文件夹/照片匹配都在该范围内收窄
     const zipScope = BATCH_ZIP_NAME ? matchOrgScope(BATCH_ZIP_NAME) : null;
     BATCH_ZIP_NAME = ""; // 一次性消费，防跨批次污染
     if (zipScope) toast(`压缩包名命中「${zipScope.label}」，优先在该范围内匹配`);
@@ -1694,9 +1694,9 @@ function popupHtml(r) {
       hashCache[id] = set; return set;
     };
     const auto = {}, ambiguous = [], dupes = [];
-    // v2.4.3 顺序兜底：zip 名/文件夹已收窄到某范围（如 翠屏山所），但照片名无语义信号（IMG-6857.jpg）时，
+    // v2.4.3 顺序兜底：zip 名/文件夹已收窄到某范围（如 史山所），但照片名无语义信号（IMG-6857.jpg）时，
     // 若「该文件夹内照片数 == 范围内建筑物数」，按出现顺序一一映射（标记 byOrder，导入确认页可人工改）
-    // 例：翠屏山.zip 内 IMG-6857.jpg 等 → 依次对应 翠屏山所 的 49 个建筑物
+    // 例：史山.zip 内 IMG-6857.jpg 等 → 依次对应 史山所 的 49 个建筑物
     const orderMap = {};
     {
       const groups = {};
@@ -1917,7 +1917,7 @@ function popupHtml(r) {
       } catch (e) { errors.push(s.name + "：" + e.message); }
     }
     if (!recs.length) { toast("未解析到任何建筑物" + (errors.length ? "；错误：" + errors.join("；") : "")); return; }
-    // 管理所名称统一（去「管理」+ 清源河特例）
+    // 管理所名称统一（去「管理」+ 潮河特例）
     recs = await unifyOfficesOnImport(recs);
     // 同名建筑物冲突提示（第三）：导入建筑物信息时，名称完全相同的要提示 覆盖/跳过/取消；同一文件导入两次（id 相同）也会落入 exist 分支触发覆盖提示
     const nameSet = new Set(records.map((x) => x.name).filter(Boolean));
@@ -2585,7 +2585,7 @@ function popupHtml(r) {
       const ok = await new Promise((resolve) => {
         openModal("管理所名称统一确认",
           '<div class="hint">导入数据中的管理所名称与标准名单不一致，是否按建议统一？</div>' +
-          '<div class="hint">标准名单：地下水源所、温汤所、云龙山所、翠屏山所、埝湾所、水库所、北台峪所、柳林庄所、清源河所（站为所的下一级，不参与所名单）。</div>' +
+          '<div class="hint">标准名单：地下水源所、温泉所、龙山所、史山所、埝头所、水库所、北台上所、西田各庄所、潮河所（站为所的下一级，不参与所名单）。</div>' +
           '<div class="filelist">' + rows + '</div>',
           '<button class="btn ghost" id="uoKeep">保持原样</button><button class="btn primary" id="uoGo">按建议统一</button>');
         el("uoKeep").onclick = () => { closeModal(); resolve(false); };
@@ -2645,7 +2645,7 @@ function popupHtml(r) {
         recs = await IO.importKmzBuffer(bufBytes.buffer);
       }
       if (!recs.length) { hideBusy(); throw new Error("未解析到任何建筑物"); }
-      // 管理所名称统一（去「管理」+ 清源河特例）：导入即规范，后续导出/筛选/查询自动一致
+      // 管理所名称统一（去「管理」+ 潮河特例）：导入即规范，后续导出/筛选/查询自动一致
       recs = recs.map((r) => Object.assign({}, r, { office: normOffice(r.office) }));
       // 内容去重（item 6）：整文件哈希，若与此前导入的相同则提示覆盖/跳过
       if (bufBytes) {
@@ -2739,7 +2739,7 @@ function popupHtml(r) {
           <option value="kmz">kmz（含照片）</option>
           <option value="kml">kml（不含照片，通用）</option>
           <option value="csv">csv（属性表）</option>
-          <option value="chaohe">清源河格式（CSV 兼容）</option>
+          <option value="chaohe">潮河格式（CSV 兼容）</option>
           <option value="xlsx">xlsx（Excel，通用）</option>
           <option value="xls">xls（Excel 2003 兼容）</option>
           <option value="ovobj">ovobj（奥维文本坐标，纯文本）</option>
@@ -2760,7 +2760,7 @@ function popupHtml(r) {
       <div class="field"><label>文件名（不含扩展名，系统按所选格式自动加后缀）</label><input id="exFname" class="inp" value="建筑物信息"></div>
       <div class="field"><label>导出位置</label>
         <select id="exWhere"><option value="saf">本地下载（可改文件名）</option><option value="folder">指定手机文件夹（Android，可改文件名）</option></select></div>
-      <div class="hint">ovkmz/kmz 为 zip 包（doc.kml + 照片）；清源河格式为 CSV（列：名称,管理所,管理站,类型,经度,纬度,说明）；xlsx/xls 为统一属性表（名称/管理所/管理站/建筑物类型/经纬度/自定义参数/说明），<b>导出的文件可原样再导入</b>。选「指定手机文件夹」将弹出系统文件夹选择器。</div>`;
+      <div class="hint">ovkmz/kmz 为 zip 包（doc.kml + 照片）；潮河格式为 CSV（列：名称,管理所,管理站,类型,经度,纬度,说明）；xlsx/xls 为统一属性表（名称/管理所/管理站/建筑物类型/经纬度/自定义参数/说明），<b>导出的文件可原样再导入</b>。选「指定手机文件夹」将弹出系统文件夹选择器。</div>`;
     openModal("导出", html, `<button class="btn ghost" id="exCancel">取消</button><button class="btn primary" id="exGo">导出</button>`);
     const list = el("exList");
     const updateCnt = () => { el("exCnt").textContent = `已选 ${list.querySelectorAll(".ex-cb:checked").length}/${scope.length}`; };
@@ -2830,7 +2830,7 @@ function popupHtml(r) {
         if (!go) return;
       }
       // 导出前先显示「执行中」遮罩：含照片的 kmz/ovkmz 在 JS 端打包 base64 可能较慢，避免"点了没反应"
-      // v2.4.9 导出统一：管理所一律写标准名（去「管理」、清源河/水库归位），与导入/筛选口径一致
+      // v2.4.9 导出统一：管理所一律写标准名（去「管理」、潮河/水库归位），与导入/筛选口径一致
       (typeof sel !== "undefined" && sel ? sel : []).forEach(function (r) { if (r && r.office != null) { const nv = normOffice(r.office); if (nv) r.office = nv; } });
       busy("正在生成导出文件，请稍后…");
       await new Promise((r) => setTimeout(r, 30)); // 让遮罩先绘制
@@ -3011,7 +3011,7 @@ function popupHtml(r) {
     const html = `<div class="hint" style="line-height:1.9">
       <b>浏览</b>：拖动地图、缩放查看建筑物；点击标记看详情与照片。<br>
       <b>搜索</b>：顶部输入框按名称实时筛选。<br>
-      <b>筛选</b>：菜单→筛选，可多选建筑物类型（如 节制闸 / 跌水）与管理所（如 温汤所）；选管理所会自动定位到其范围中心。<br>
+      <b>筛选</b>：菜单→筛选，可多选建筑物类型（如 节制闸 / 跌水）与管理所（如 温泉所）；选管理所会自动定位到其范围中心。<br>
       <b>添加</b>：菜单→添加，点「在地图上点选坐标」或手填经纬度，可上传多张照片（正面/背面/侧面…）。<br>
       <b>编辑/删除</b>：点开标记 → 编辑 / 删除。<br>
       <b>导入</b>：支持 ovkmz / kmz / kml / csv / ovobj / obj（奥维导出格式；ovobj 自动识别：奥维原生二进制 OviO 点对象、文本坐标、zip/gzip 容器，均可导入）。<br>
@@ -3043,7 +3043,7 @@ function popupHtml(r) {
       <b>📝 笔记导出</b>：备忘录 / 运维记录 / 游记支持一键<b>导出 Word（.doc）</b>与<b>导出 PDF</b>（走系统打印「另存为 PDF」）。<br>
       <b>🧭 对象智能检索</b>（菜单 → 对象智能检索）：<b>参数反查</b>（按参数键 / 值反查对象）、<b>分类统计</b>（按类型 / 管理所 / 参数汇总）、<b>类型定义入库</b>（向量化后参与检索）、<b>预案文档关联</b>、<b>生成说明文档</b>（可导出 Word / PDF）、<b>PDF 转 Word</b>。<br>
       <b>📊 表格导入导出规范化</b>：导入奥维导出的 CSV 自动识别编码（UTF-8 / GBK / GB18030 / Big5），不再报「未找到名称列」；导出 CSV 第 8 列为 <b>Comment</b>、多参数以「<b>|</b>」分隔并新增「文件夹」列（管理处 / 管理所 / 段--类型）；导出的表格可原样回导；ovkmz 备注按「键 : 值|」换行输出，与奥维一致。<br>
-      <b>🏷️ 管理所智能识别</b>：9 所标准名单模糊匹配 + 清源河 / 水库特例归并 + 「站」归为所的下一级；导入 / 导出 / 筛选三处口径统一。<br>
+      <b>🏷️ 管理所智能识别</b>：9 所标准名单模糊匹配 + 潮河 / 水库特例归并 + 「站」归为所的下一级；导入 / 导出 / 筛选三处口径统一。<br>
       <b>⛶ 图片 / 文档导出</b>：对象智能检索与笔记页均可「导出 PDF」；导出的 PDF 直接用系统打印对话框「另存为 PDF」保存。<br>
       <b>🐞 错误日志</b>：菜单→信息与帮助→错误日志，全局捕获运行错误（环形缓冲），可查看/复制/清空，便于反馈排查。
     </div>`;
@@ -3094,7 +3094,7 @@ function popupHtml(r) {
   }
   // 版本变更：单一来源 APP_VER + 内置变更摘要（与文档同步维护）
   const CHANGELOG = [
-    ["v2.4.9", "2026-09-11", ["启动口令保护（内部版）：首次启动校验启动口令，支持「记住本机 / 修改密码 / 忘记密码」；忘记口令提示改为「请联系软件开发者 / 管理员协助重置」，出厂口令仅见交付说明；对话框、帮助与提示中一律不出现明文口令", "智能传输提示：本机导入 / 导出（不走网络）不再弹流量提醒、小文件直接执行不打扰；仅大文件（≥50MB）改弹「操作提示」并显示文件大小与耗时提醒", "子菜单「隐藏 / 收藏」按钮与菜单文字间距拉大，避免误触（仍为长按触发 + 二次确认）", "修复导入「未找到名称列」：奥维导出的 GBK / ANSI 编码 CSV 不再乱码——按 BOM / UTF-8 / GB18030 / GBK / Big5 自动识别编码", "CSV 导出列规范化：第 8 列「参数说明」改为「Comment」，多参数分隔符由「;」改为「|」，并新增「文件夹」列（管理处 / 管理所 / 段--类型），与奥维导入格式对齐", "导入兼容自身导出：参数分隔符「|」「;」与半角「:」/ 全角「：」均可解析，导出的表格重新导入后参数可正常显示到建筑物详情", "ovkmz 导出备注：参数按「键 : 值|」并换行组织，与奥维原装格式一致", "管理所智能识别：9 所标准名单模糊匹配 + 清源河 / 水库特例归并 + 「站」归为所的下一级；导入、导出、筛选三处口径统一", "导出前实时统计「将导出 N 个建筑物 / M 张照片」（随范围与管理所勾选联动）；照片导出补 full → dataUrl → thumb 兜底链，三者皆空时明确提示并写入错误日志", "图片预览增强：电脑端支持鼠标拖拽平移 + 滚轮缩放（1~5 倍），手机端支持双指缩放 + 拖动 + 长按菜单，另支持键盘 + / - / 方向键 / 0 复位", "备忘录 / 运维记录新增「导出 Word」「导出 PDF」（PDF 走系统打印「另存为 PDF」）", "新增「对象智能检索」菜单组：参数反查 / 分类统计 / 类型定义入库（向量化）/ 预案文档关联 / 生成说明文档 / PDF 转 Word，并支持导出 Word 与 PDF"]],
+    ["v2.4.9", "2026-09-11", ["启动口令保护（内部版）：首次启动校验启动口令，支持「记住本机 / 修改密码 / 忘记密码」；忘记口令提示改为「请联系软件开发者 / 管理员协助重置」，出厂口令仅见交付说明；对话框、帮助与提示中一律不出现明文口令", "智能传输提示：本机导入 / 导出（不走网络）不再弹流量提醒、小文件直接执行不打扰；仅大文件（≥50MB）改弹「操作提示」并显示文件大小与耗时提醒", "子菜单「隐藏 / 收藏」按钮与菜单文字间距拉大，避免误触（仍为长按触发 + 二次确认）", "修复导入「未找到名称列」：奥维导出的 GBK / ANSI 编码 CSV 不再乱码——按 BOM / UTF-8 / GB18030 / GBK / Big5 自动识别编码", "CSV 导出列规范化：第 8 列「参数说明」改为「Comment」，多参数分隔符由「;」改为「|」，并新增「文件夹」列（管理处 / 管理所 / 段--类型），与奥维导入格式对齐", "导入兼容自身导出：参数分隔符「|」「;」与半角「:」/ 全角「：」均可解析，导出的表格重新导入后参数可正常显示到建筑物详情", "ovkmz 导出备注：参数按「键 : 值|」并换行组织，与奥维原装格式一致", "管理所智能识别：9 所标准名单模糊匹配 + 潮河 / 水库特例归并 + 「站」归为所的下一级；导入、导出、筛选三处口径统一", "导出前实时统计「将导出 N 个建筑物 / M 张照片」（随范围与管理所勾选联动）；照片导出补 full → dataUrl → thumb 兜底链，三者皆空时明确提示并写入错误日志", "图片预览增强：电脑端支持鼠标拖拽平移 + 滚轮缩放（1~5 倍），手机端支持双指缩放 + 拖动 + 长按菜单，另支持键盘 + / - / 方向键 / 0 复位", "备忘录 / 运维记录新增「导出 Word」「导出 PDF」（PDF 走系统打印「另存为 PDF」）", "新增「对象智能检索」菜单组：参数反查 / 分类统计 / 类型定义入库（向量化）/ 预案文档关联 / 生成说明文档 / PDF 转 Word，并支持导出 Word 与 PDF"]],
     ["v2.4.8", "2026-09-07", ["知识库智能化：新增「知识库模糊检索」——错字/缺字/语序不同也能命中（如「跌水闸」可命中「跌水节制闸」），结果带相关度百分比，可对任一条目直接反向查询或标为存疑", "新增「提示词生成」：问题 + 知识库最相关片段 + 长期记忆自动拼装成完整提示词，可复制自用或直接投喂大模型；AI 查询结果新增「查看提示词」按钮", "新增「AI 记忆（Hermes）」：查询/纠错/存疑自动沉淀为记忆并在提示词中引用，支持查看、按关键词检索、一键清空（不影响知识条目）", "新增「存疑与反向查询」：不确定的内容可打存疑标记（标签：存疑/待核实），系统用其内容反向检索知识库给出最相关条目辅助核实；AI 查询结果可一键「标为存疑」", "修复重要缺陷：AI 调用时已生成知识库上下文却仍把原始问题发给模型（知识库等于没接上），现已真正随请求发送", "设置新增「通过 GitHub 升级」子菜单（内部版查 *-internal-4060、公开版查 *-public-4060，与网盘双通道隔离一致；私有库支持填 GitHub 只读 Token）", "菜单可隐藏：长按任意菜单项选择隐藏，设置中「恢复隐藏子菜单 / 隐藏子菜单列表」随时恢复，恢复入口受保护不会被自己锁死", "导出位置可自定义：设置「导出文件位置」预配置默认文件夹，导出前可询问（批量导出只问一次），知识库导出默认名改为「知识库YYYY-MM-DD」", "奥维 ovkmz 互通修复：导入剥除 UTF-8 BOM（原装文件不再报 xml 语法错误）、附件路径归一（照片不再只显示占位符）；导出照片目录对齐原装 ovatta/、参数分隔符对齐「键 : 值|」"]],
     ["v2.4.7", "2026-09-05", ["升级按钮与自动升级：设置菜单新增「检查新版本」一键检测（百度网盘）；发现新版自动下载安装包（直链走 fetch 分块下载+进度、下载完成提示安装位置；百度网盘分享页自动打开并备好提取码），可在升级对话框关闭自动下载", "古建改单通道：数据本身公开、两端全功能，取消内部分版——构建只出一套包（releases/），升级走 public 通道；水利/感知保持公开/内部双通道隔离不变", "发版自动上传百度网盘：构建收尾自动把安装包 + latest.json 上传到网盘「一张图发布/<应用>/<通道>/」目录（bdpan CLI；未登录时优雅跳过），并发起 30 天分享链接写回 latest.json"]],
     ["v2.4.6", "2026-09-05", ["知识库智能框架：保存即「切片+向量化」——句子级切片（尽量保持语句完整，长段按句切且重叠衔接），离线哈希向量（中英文混排，零外部依赖）+ 关键词命中 = 混合检索；支持反向查询（内容→条目）、模糊/语义查询、智能生成提示词", "引入记忆管理（MEMORY）与 Hermes 自我学习机制，并与已接入大模型有机融合（AI 提示词自动拼装 KB 精准片段 + 自学习记忆），统一上下文检索入口", "升级体系升级：水利/感知内部版与公开版均可经百度网盘自动升级（latest.json 直读清单 + download 填网盘分享链接）；升级数据导出支持自定义文件夹/文件名（默认「水利一张图备份+日期.bak」/「感知设备一张图+日期.bak」），导出文件可回灌导入并提示覆盖全部数据风险", "修复「写备忘录/写游记」菜单 script error：journal.js 全面 ES5 兼容 + 全局 helper（openModal/el/toast/KB）缺失时 fail-loud 而非静默空操作；app.js 顶注注入 NodeList.forEach 等老 WebView 兼容垫片，杜绝白屏与裸 script error", "内置轻量 OCR（tesseract.js 本地资产 chi_sim/eng，离线）：扫描件 PDF 与 jpg/png/bmp/webp 图片自动识别文字入库，懒加载不拖启动", "新增「信息与帮助→四端功能对照单/版本变更/功能介绍」全部同步到最新（含 v2.4.4~v2.4.6 新增能力）"]],
@@ -3103,14 +3103,14 @@ function popupHtml(r) {
     "筛选多命中圈选三端统一：绿色虚线最小包围圆（Ritter 算法，刚好圈住+视野刚好完整显示），单命中直接定位", 
 "长按菜单收藏补振动反馈（navigator.vibrate）"]],
     ["v2.4.1", "2026-08-30", ["筛选菜单：关键词历史区块上移到管理所上方（与查询词上下衔接更顺）", "\u5feb\u6377\u5e38\u7528 vs \u539f\u5b50\u83dc\u5355\u89c6\u89c9\u533a\u5206\uff1a\u2b50\u524d\u7f00 + \u91d1\u8fb9\u5de6 border + \u6d45\u91d1\u5fae\u67d3\u8272\u80cc\u666f\uff08\u7528\u6237\u4e00\u773c\u80fd\u5206\u8fa8\u300c\u5feb\u6377\u5e38\u7528\u300d\uff0c\u4e0d\u518d\u8bef\u4ee5\u4e3a\u662f\u6253\u5f00\u5b50\u83dc\u5355\uff09", "\u5468\u8fb9\u641c\u7d22\u5efa\u7b51\u7269\u7c7b\u578b\u4feebug\uff1a\u9009\u9879\u70b9\u51fb\u5207\u6362\u5b9e\u65f6\u663e\u793a\u300c\u5df2\u9009 N \u4e2a\u7c7b\u578b\u300d\u8ba1\u6570\u3001\u7a7a\u65f6\u5168\u9009\u751f\u6548\uff0c\u53bb\u9664\u4e0d\u54cd\u5e94\u611f", "\u673a\u6784\u9ed8\u8ba4\u7ba1\u7406\u6240\u652f\u6301\u591a\u4e2a\uff1a\u8bbe\u7f6e \u2192 \u673a\u6784\u5c42\u7ea7\u9ed8\u8ba4\u503c\uff0c\u539f\u300c\u9ed8\u8ba4\u6240\u300d\u6539\u4e3a\u591a\u9009 chips\uff08\u4e00\u952e\u591a\u9009\u591a\u4e2a\u9ed8\u8ba4\u6240\uff09\uff0c\u65b0\u589e\u5efa\u7b51\u7269\u9884\u586b\u7b2c 1 \u4e2a\uff1b\u5176\u4f59\u5c42\u7ea7\u5355\u503c", "\u7ba1\u7406\u6bb5\u9ed8\u8ba4\u7a7a + \u6bb5/\u6240\u4e24\u4e2a\u72ec\u7acb\u9009\u9879\uff1a\u6bb5\u5b57\u6bb5\u52a0\u300c\u53ef\u7559\u7a7a\u300d\u63d0\u793a\uff0c\u4e0b\u62c9\u4e0e\u6240\u5b57\u6bb5\u4e92\u4e0d\u7ed1\u5b9a\uff0c\u6bb5\u540d\u4e0d\u5fc5\u968f\u5de6\u6240\u540d", "zip \u540d\u79f0\u5f39\u6027\u5c42\u6b21\u5339\u914d\uff1amatchOrgScope \u4e0d\u518d\u56fa\u5b9a\u6309 office\u2192station\u2192section\u2192mgmt\u2192bureau \u987a\u5e8f\uff0c\u6539\u6309\u6700\u957f\u6700\u5177\u4f53\u7c7b\u522b\u4f18\u5148 + \u957f\u5ea6\u52a0\u6743\uff08\u5982 \u53f2\u5c71.zip \u2192 \u81ea\u52a8\u9501\u5b9a\u53f2\u5c71\u6240\uff1b\u4eac\u5bc6\u5f15\u6c34\u7ba1\u7406\u5904.zip \u2192 \u4f18\u5148\u5339\u914d\u7ba1\u7406\u5904\u4e0b\u5c5e\u5355\u4f4d\uff09", "AI \u667a\u80fd\u67e5\u8be2\u8f93\u5165\u6846\u793a\u4f8b+\u5360\u4f4d\u7b26\u66f4\u53cb\u597d\uff1apickRecord \u589e\u52a0\u300c\u8bd5\u8bd5\u641c\u300d5 \u679a\u6761\u76ee\u7684\u5feb\u6377 chip\uff08\u8d34\u8fd1\u9886\u57df\uff1a\u6c34\u5229/\u611f\u77e5/\u53e4\u5efa \u5404\u6709\u9886\u57df\u793a\u4f8b\uff09\uff0c\u4e0d\u518d\u7528\u5360\u4f4d\u7b26\u6697\u85cf\u771f\u5b9e\u6761\u76ee\u540d\uff08\u907f\u514d\u5728\u67e5\u8be2\u9762\u677f\u51fa\u73b0\u4e0e\u573a\u666f\u4e0d\u7b26\u7684\u67e5\u8be2\u4f8b\uff09", "\u611f\u77e5/\u53e4\u5efa\u540c\u6b65\u65b0\u589e\uff1a\u76f8\u540c ANR/perf \u4fee\u590d + \u5360\u4f4d\u7b26\u53cb\u597d\u5316 + pickRecord \u79cd\u5b50\u82af\u7247", "\u4e09\u7aef\u56db\u5e73\u53f0\u540c\u6b65\u66f4\u65b0\uff08Win/UOS/Android/PWA\uff09\uff0c\u65b0\u914d\u7f6e\u952e shuili_orgcfg_v2 \u5df2\u5305\u542b officeDefaults \u6570\u7ec4\u8fc1\u79fb"]],
-    ["v2.4.0", "2026-08-28", ["\u7ec4\u7ec7\u4e94\u7ea7\u5316：建筑物组织层级扩为 局/管理处/所/站/段（默认：水利工程管理中心 / 清源灌区管理处 / 水库所），添加建筑物表单、筛选、导入导出全链路同步；新配置键 shuili_orgcfg_v2 自动迁移旧数据", "设置新增三项管理：①机构层级与默认名称管理（增删改 局/管理处/所/站/段 + 默认值编辑，重命名级联同步到所有建筑物与「💾 保存并全量同步」按钮）②建筑物类型管理（数据派生类型改名级联/自定义类型可删/新增）③快捷常用设置", "导出文件名与文件夹层次可选项：导出照片支持文件名组合段（局/管理处/所/站/段/建筑物名，默认 所+名，`_` 连接）与文件夹层次组合段（默认 管理所/），安卓端多级目录导出原生支持；压缩包名按组合段命名", "zip 三级匹配导入：压缩包文件名 → zip 内文件夹 → 照片文件名；zip 名命中机构（所→站→段→管理处→局，如 翠屏山.zip → 优先在翠屏山所范围内匹配）后整包收窄匹配范围；安卓原生桥接 zip 文件名", "新增「快捷常用」主菜单：置于查询/筛选之下首位，右键/长按任意菜单项快速添加，或到设置勾选；原子菜单全部保留", "菜单调序：查询 筛选 快捷常用 地图与位置 数据管理 传输与共享 运行维护 智能AI 设置 信息帮助；「大模型 AI 设置」并入智能AI组、「关于/帮助」并入信息与帮助组（功能全保留）", "修复文件夹上下文管理所匹配 bug：DIMS.offices 为规范化名（温汤所），旧代码用 r.office 原文比对（温汤管理所）导致范围限定失效，改为规范化比对"]],
+    ["v2.4.0", "2026-08-28", ["\u7ec4\u7ec7\u4e94\u7ea7\u5316：建筑物组织层级扩为 局/管理处/所/站/段（默认：水利工程管理中心 / 京密引水管理处 / 水库所），添加建筑物表单、筛选、导入导出全链路同步；新配置键 shuili_orgcfg_v2 自动迁移旧数据", "设置新增三项管理：①机构层级与默认名称管理（增删改 局/管理处/所/站/段 + 默认值编辑，重命名级联同步到所有建筑物与「💾 保存并全量同步」按钮）②建筑物类型管理（数据派生类型改名级联/自定义类型可删/新增）③快捷常用设置", "导出文件名与文件夹层次可选项：导出照片支持文件名组合段（局/管理处/所/站/段/建筑物名，默认 所+名，`_` 连接）与文件夹层次组合段（默认 管理所/），安卓端多级目录导出原生支持；压缩包名按组合段命名", "zip 三级匹配导入：压缩包文件名 → zip 内文件夹 → 照片文件名；zip 名命中机构（所→站→段→管理处→局，如 史山.zip → 优先在史山所范围内匹配）后整包收窄匹配范围；安卓原生桥接 zip 文件名", "新增「快捷常用」主菜单：置于查询/筛选之下首位，右键/长按任意菜单项快速添加，或到设置勾选；原子菜单全部保留", "菜单调序：查询 筛选 快捷常用 地图与位置 数据管理 传输与共享 运行维护 智能AI 设置 信息帮助；「大模型 AI 设置」并入智能AI组、「关于/帮助」并入信息与帮助组（功能全保留）", "修复文件夹上下文管理所匹配 bug：DIMS.offices 为规范化名（温泉所），旧代码用 r.office 原文比对（温泉管理所）导致范围限定失效，改为规范化比对"]],
     ["v2.3.0", "2026-08-29", ["本地优先·AI 与知识库高度融合：智能查询答案自动标注来源——本地知识库命中标「📖 本地知识库已参考」，联网兜底标「🌐 联网」，离线纯本地标「📖 本地」；发行版预内置知识库骨架，首次启动离线即时导入，无网环境开箱即用", "新增「知识库查询」菜单：对话式检索本地知识库（不依赖联网 AI），命中片段按相关度排序展示", "AI 智能更新可人工把关：生成的简介与参数表在应用前可逐项编辑修正，改动高亮对比，确认后才写入", "管理所/管理站在线维护：筛选弹窗新增 ⚙️ 维护入口，支持增改删机构与站、改名全链路联动；「管理站」录入由手输改为下拉选择", "周边搜索按类型筛选：周边 N 米内可勾选建筑物类型，只看关心的类型", "导出文件名自定义：建筑物信息与照片导出均可自定义文件名（留空按机构命名）", "关键词历史：筛选弹窗收纳最近搜索关键词，点击即用、可清空", "修复筛选弹窗「照片」分组点击异常"]],
     ["v2.2.1", "2026-08-23", ["新增「退出当前页面」常驻按钮（约束5）：顶栏✕按钮调用 APP.back() 逐级关闭弹窗>抽屉>测距>列表，无物理返回键的 Win/统信/苹果端也能随时退出当前页面；并增强 back() 主页兜底（已在主页则点✕关闭抽屉/提示三击空白唤主菜单），与既有三击空白弹主菜单并存", "四端同步（2026-08-23）：将含 P5（运行维护/旅游打卡/智能分析）+ 退出按钮的最新前端同步至 Win11(exe·msi)、统信UOS龙芯(mips64el deb)、苹果PWA(静态源)；统信端纠正架构——龙芯3A4000为 mips64el，弃用此前误打的 amd64 deb，改用浏览器壳方案打 mips64el deb（Electron 无 mips 二进制），功能与其余端一致且离线可用", "四端功能对照表产出（约束3）：逐能力列出安卓/Win/统信/苹果差异，不强行一致"]],
     ["v2.2", "2026-08-21", ["照片导出「没有可导出照片」根因修复：UOS/Web/PWA/Win 上报此错的根因是导入未成功（照片数据从未落库），不再是代码路径缺漏；0 照片时弹出可操作指引，指向「从安卓复制照片」目录流式导入 / 批量导入照片 / 从安卓平台导出照片，杜绝只报一句「没有照片」", "导出照片覆盖提示（问题③之三）：本地文件夹导出（安卓 exportFilesToTree）在目标文件夹已有同名照片文件时，先弹「目标文件夹已有同名照片 → 覆盖导出 / 取消」，不再静默覆盖", "删除 6 张孤立内置样张（images/pic_20260609_*.jpg）：这些图未嵌入任何记录、在安卓端显示×且其他平台无法显示，已清理避免误导", "四平台能力复核：逐模块核对安卓/苹果PWA/统信UOS/Win11 功能一致性，确认收藏窗口、从安卓复制照片、照片目录说明、四端功能对照单等在四端均可用；安卓能做的功能其余平台均可做（目录流式导入兜底 UOS 8G 内存）", "清理临时编译产物：images/ 下不再残留无关文件，APK 打包同步排除"]],
     ["v2.01", "2026-08-21", ["服务端口统一：局域网互传服务端口由 8888 改为 7205（app.js 输入框默认值与 JS 兜底同步，原生 Android `startLanServerNow` 同步 7205，测试脚本端口同步），解决多端/历史端口不一致", "添加建筑物改为「坐标优先」两步式：第 1 步先引导获取坐标（我的位置 / 地图点选 / 搜索已有建筑物 / 手填经纬度），坐标到位后才进入第 2 步填写建筑信息（表单预填经纬度、保留表单内重选坐标），从源头杜绝经纬度漏填导致的标记落不了图", "模块逐一审查与完善：冒烟回归脚本修正过期 CSS 颜色断言（--bg 实际 #1a456f），使测试诚实可复跑；四端功能对照单新增 v2.01 条目"]],
-    ["v2.0", "2026-08-21", ["新增地图控件：放大/缩小/收藏当前位置/返回收藏位置（右侧悬浮按钮组，收藏持久化）", "修复 zip 照片导入卡死：改用中央目录定位解析 zip（正确处理目录条目/data descriptor/多层目录/UTF-8 文件名），解压加超时保护，老浏览器无 DecompressionStream 时明确报错降级（不再「一直处理一个文件」不动）", "支持 zip 内多层目录：解压用完整相对路径，文件夹上下文逐层匹配管理所/类型", "管理所名称统一：导入/导出/查询/筛选全链路去「管理」两字（温汤管理所→温汤所、埝湾管理所→埝湾所）；清源河管理所/清源河总干渠管理所→清源河所；查询筛选时「管理」可忽略（翠屏山所=翠屏山管理所）；站为所的下一级单位保持独立字段", "标记颜色/形状自定义 + 左下角图例（既有能力复核）；四端功能对照单（既有）"]],
-    ["v1.99", "2026-08-13", ["运行稳定性修复（2026-08-20 下午）：修复地图初始化运行时错误「layerGroup.getBounds is not a function」——`L.layerGroup` 没有 `getBounds` 方法，改用 `L.featureGroup`（继承 layerGroup 且自带 getBounds），`fitToShown` 恢复正常缩放到数据范围；该错误只在浏览器/真机运行时暴露，静态核验发现不了，已加防回归检查", "界面与导入优化（2026-08-20）：①修复「四端功能对照单」点击空白——渲染函数定义在独立脚本、作用域内取不到 openModal 报错，已移入 app.js 与帮助/关于同作用域；②修复信息弹窗浅字白底看不清——Leaflet 弹窗改为应用深色主题、参数键亮蓝加粗，举一反三统一弹窗/标签/图例配色；③新增建筑物标记自定义颜色/形状（水滴/方/圆/三角 8 色）+ 左下角图例示例；④移除重复底图入口（顶栏🚫按钮与菜单「底图开关」，保留「图源切换」）；⑤导入时同名建筑物提示「覆盖同名/跳过同名/取消」（文件级去重原有保留）；⑥统信端不再生成绿色版 tar.gz（仅 deb）", "桌面版回灌增强（2026-08-19）：奥维导入时 Folder 名含「段--类型」自动补全 btype/type（如 柳林庄段--进水闸 → station=柳林庄段、btype=进水闸、type=柳林庄段--进水闸），三端（Android/桌面）解析结果一致", "真机三次修复（2026-08-18 下午）：导入 ovkmz 报「IO.sha256Hex is not a function」根治——io.js 定义了 sha256Hex 但导出表漏列（v1.8.0 后重构丢失），doImport 内容去重步骤一调即崩；已补导出 + 加 sha256: {hex} 兼容别名，并交叉核对 app.js 全部 31 个 IO.* 调用与导出表仅此一处缺口；真实文件 harness 扩至 16/16（含去重哈希断言）", "真机二次修复（2026-08-18 下午）：导入「点了没反应」根治——原生 onShowFileChooser 弃用 params.createIntent()（Chromium 按 accept 解析生成的 ACTION_GET_CONTENT + EXTRA_MIME_TYPES 会把 .ovkmz/.7z 等无 MIME 映射扩展名混入非法列表 → 部分机型系统选择器空白/打不开），改统一 ACTION_OPEN_DOCUMENT + */*：系统 DocumentsUI 必然可打开、全部文件可见可选，格式由前端扩展名校验（ovkmz/kmz/zip/7z/csv/xls/xlsx/kml 全覆盖）；JS pickFiles 增加 2.5s 非静默失败看门狗（选择器确未弹出时 toast 引导，杜绝「点了没反应」静默失败）", "真机复核修复（2026-08-18）：①导入 ovkmz 选不了文件——Android 系统选择器按 MIME 过滤，.ovkmz 无 MIME 映射被隐藏；文件选择 accept 改为「扩展名+MIME+*/*」兜底，全部文件可选、格式由导入端校验；②照片 zip 导入同样修复 .zip/.7z 无法选择问题（.7z 无标准 MIME 映射）；③奥维 ovkmz 真实结构兼容——实测 D 盘《水利工程基础信息.ovkmz》（557 个建筑物 + ovatta/ 照片）：OvAttaItem 照片路径在元素文本内容（非 Url/FileName 属性）现可解析、description「键 : 值|」参数现可导入、Folder 层级映射为管理所/管理站；导出改为奥维原生 OvAttr/OvAttaList/OvAttaItem 文本路径结构 + OvCoordType=CGCS2000，导出文件既被本 APP 识别也可导入奥维，往返一致", "核心 Bug 修复：击穿导入「点击 csv 等无反应」——根因是 WebView 下局部 input 无引用被 GC，onchange 永不触发；改为统一 pickFiles 持有引用并挂 DOM，8 个导入入口（单文件/文件夹/多选/zip×2/网盘备份）全部修复，Node 实跑验证导入链路畅通", "奥维格式互通加固：kmz/ovkmz 导入现兼容奥维真实导出结构——解析 OvAttaItem/Attachment 的 Url、description 中 img src，照片按「全路径 > files/ 前缀 > basename 兜底」三重解析取回，不再依赖本 APP 专属命名；本 APP 导出（含附件照片）仍可被奥维识别导入，往返一致", "筛选后导出默认导出筛选集（既有），并在导出弹窗顶部新增「当前导出范围」醒目提示条，明确是筛选结果还是全部建筑物", "全局「执行中，请稍后」遮罩补全到导出打包路径（含照片 kmz/ovkmz 打包较慢时显式提示）；导入/批量导入/照片导出/网盘等路径均已覆盖", "查询/筛选置顶与结果可视化保持：筛选实时命中计数（建筑物数+照片数）、蓝色虚线圆圈圈选并居中、单点跳转/无结果提示；智能匹配默认勾选最可能对并支持便捷确认；三击空白弹主菜单、每页退出按钮、灯箱放大等既有能力复核无回归"]],
-    ["v1.9.9", "2026-08-17", ["修复建筑物导入/导出（bug①）：新增 xls / xlsx 格式支持，与 csv / kmz / kml 并列；导出统一属性表（名称/管理所/管理站/建筑物类型/经纬度/自定义参数/说明），导入端 superset 解析器兼容旧奥维/清源河字段与 BIFF8 旧版 Excel（旧格式明确拒绝并提示），导出文件可原样再导入（往返一致，Node 实证 92 项全 PASS）", "修复照片导入/导出 zip（bug②）：导出压缩包内嵌 manifest.json（文件名→建筑物 id 映射），重新导入时确定性自动绑定、零人工确认；无 manifest 的旧包仍走智能模糊匹配兜底，无回归", "修复批量导入 xlsx 静默失败（bug③）：文件夹/多选/zip 三条批量通道此前都把 xlsx 当纯文本喂给 CSV 解析器（zip 通道更是固定传空串），结果「解析 0 条、界面无任何报错」；改为 xlsx 走字节流解析、xls 走 BIFF 检测解析、未知扩展名显式抛错、读取失败也提示并推进计数（不再卡住导入状态）", "修复导出列勾选失效 + 文件名错位（bug③）：IO.exportCsv/exportChaoheFile 签名为 (records, root, cols)，调用侧误按 (records, cols) 传参，导致导出文件名变成「name,管理所,…」列名串、用户勾选的导出列被完全忽略；现按正确位置传参", "修复导入文件选择器挡掉 Excel（bug④）：单文件导入入口 accept 补 .xls/.xlsx，此前用户在系统选择器里根本看不到这两类文件", "查询/筛选置顶、实时命中计数、蓝色虚线圆圈圈选、单/多/无结果跳转、退出按钮/三击空白进主菜单、智能匹配确认、长操作「执行中，请稍后」遮罩等既有能力逐模块复核，确认无回归"]],
+    ["v2.0", "2026-08-21", ["新增地图控件：放大/缩小/收藏当前位置/返回收藏位置（右侧悬浮按钮组，收藏持久化）", "修复 zip 照片导入卡死：改用中央目录定位解析 zip（正确处理目录条目/data descriptor/多层目录/UTF-8 文件名），解压加超时保护，老浏览器无 DecompressionStream 时明确报错降级（不再「一直处理一个文件」不动）", "支持 zip 内多层目录：解压用完整相对路径，文件夹上下文逐层匹配管理所/类型", "管理所名称统一：导入/导出/查询/筛选全链路去「管理」两字（温泉管理所→温泉所、埝头管理所→埝头所）；潮河管理所/潮河总干渠管理所→潮河所；查询筛选时「管理」可忽略（史山所=史山管理所）；站为所的下一级单位保持独立字段", "标记颜色/形状自定义 + 左下角图例（既有能力复核）；四端功能对照单（既有）"]],
+    ["v1.99", "2026-08-13", ["运行稳定性修复（2026-08-20 下午）：修复地图初始化运行时错误「layerGroup.getBounds is not a function」——`L.layerGroup` 没有 `getBounds` 方法，改用 `L.featureGroup`（继承 layerGroup 且自带 getBounds），`fitToShown` 恢复正常缩放到数据范围；该错误只在浏览器/真机运行时暴露，静态核验发现不了，已加防回归检查", "界面与导入优化（2026-08-20）：①修复「四端功能对照单」点击空白——渲染函数定义在独立脚本、作用域内取不到 openModal 报错，已移入 app.js 与帮助/关于同作用域；②修复信息弹窗浅字白底看不清——Leaflet 弹窗改为应用深色主题、参数键亮蓝加粗，举一反三统一弹窗/标签/图例配色；③新增建筑物标记自定义颜色/形状（水滴/方/圆/三角 8 色）+ 左下角图例示例；④移除重复底图入口（顶栏🚫按钮与菜单「底图开关」，保留「图源切换」）；⑤导入时同名建筑物提示「覆盖同名/跳过同名/取消」（文件级去重原有保留）；⑥统信端不再生成绿色版 tar.gz（仅 deb）", "桌面版回灌增强（2026-08-19）：奥维导入时 Folder 名含「段--类型」自动补全 btype/type（如 西田各庄段--进水闸 → station=西田各庄段、btype=进水闸、type=西田各庄段--进水闸），三端（Android/桌面）解析结果一致", "真机三次修复（2026-08-18 下午）：导入 ovkmz 报「IO.sha256Hex is not a function」根治——io.js 定义了 sha256Hex 但导出表漏列（v1.8.0 后重构丢失），doImport 内容去重步骤一调即崩；已补导出 + 加 sha256: {hex} 兼容别名，并交叉核对 app.js 全部 31 个 IO.* 调用与导出表仅此一处缺口；真实文件 harness 扩至 16/16（含去重哈希断言）", "真机二次修复（2026-08-18 下午）：导入「点了没反应」根治——原生 onShowFileChooser 弃用 params.createIntent()（Chromium 按 accept 解析生成的 ACTION_GET_CONTENT + EXTRA_MIME_TYPES 会把 .ovkmz/.7z 等无 MIME 映射扩展名混入非法列表 → 部分机型系统选择器空白/打不开），改统一 ACTION_OPEN_DOCUMENT + */*：系统 DocumentsUI 必然可打开、全部文件可见可选，格式由前端扩展名校验（ovkmz/kmz/zip/7z/csv/xls/xlsx/kml 全覆盖）；JS pickFiles 增加 2.5s 非静默失败看门狗（选择器确未弹出时 toast 引导，杜绝「点了没反应」静默失败）", "真机复核修复（2026-08-18）：①导入 ovkmz 选不了文件——Android 系统选择器按 MIME 过滤，.ovkmz 无 MIME 映射被隐藏；文件选择 accept 改为「扩展名+MIME+*/*」兜底，全部文件可选、格式由导入端校验；②照片 zip 导入同样修复 .zip/.7z 无法选择问题（.7z 无标准 MIME 映射）；③奥维 ovkmz 真实结构兼容——实测 D 盘《水利工程基础信息.ovkmz》（557 个建筑物 + ovatta/ 照片）：OvAttaItem 照片路径在元素文本内容（非 Url/FileName 属性）现可解析、description「键 : 值|」参数现可导入、Folder 层级映射为管理所/管理站；导出改为奥维原生 OvAttr/OvAttaList/OvAttaItem 文本路径结构 + OvCoordType=CGCS2000，导出文件既被本 APP 识别也可导入奥维，往返一致", "核心 Bug 修复：击穿导入「点击 csv 等无反应」——根因是 WebView 下局部 input 无引用被 GC，onchange 永不触发；改为统一 pickFiles 持有引用并挂 DOM，8 个导入入口（单文件/文件夹/多选/zip×2/网盘备份）全部修复，Node 实跑验证导入链路畅通", "奥维格式互通加固：kmz/ovkmz 导入现兼容奥维真实导出结构——解析 OvAttaItem/Attachment 的 Url、description 中 img src，照片按「全路径 > files/ 前缀 > basename 兜底」三重解析取回，不再依赖本 APP 专属命名；本 APP 导出（含附件照片）仍可被奥维识别导入，往返一致", "筛选后导出默认导出筛选集（既有），并在导出弹窗顶部新增「当前导出范围」醒目提示条，明确是筛选结果还是全部建筑物", "全局「执行中，请稍后」遮罩补全到导出打包路径（含照片 kmz/ovkmz 打包较慢时显式提示）；导入/批量导入/照片导出/网盘等路径均已覆盖", "查询/筛选置顶与结果可视化保持：筛选实时命中计数（建筑物数+照片数）、蓝色虚线圆圈圈选并居中、单点跳转/无结果提示；智能匹配默认勾选最可能对并支持便捷确认；三击空白弹主菜单、每页退出按钮、灯箱放大等既有能力复核无回归"]],
+    ["v1.9.9", "2026-08-17", ["修复建筑物导入/导出（bug①）：新增 xls / xlsx 格式支持，与 csv / kmz / kml 并列；导出统一属性表（名称/管理所/管理站/建筑物类型/经纬度/自定义参数/说明），导入端 superset 解析器兼容旧奥维/潮河字段与 BIFF8 旧版 Excel（旧格式明确拒绝并提示），导出文件可原样再导入（往返一致，Node 实证 92 项全 PASS）", "修复照片导入/导出 zip（bug②）：导出压缩包内嵌 manifest.json（文件名→建筑物 id 映射），重新导入时确定性自动绑定、零人工确认；无 manifest 的旧包仍走智能模糊匹配兜底，无回归", "修复批量导入 xlsx 静默失败（bug③）：文件夹/多选/zip 三条批量通道此前都把 xlsx 当纯文本喂给 CSV 解析器（zip 通道更是固定传空串），结果「解析 0 条、界面无任何报错」；改为 xlsx 走字节流解析、xls 走 BIFF 检测解析、未知扩展名显式抛错、读取失败也提示并推进计数（不再卡住导入状态）", "修复导出列勾选失效 + 文件名错位（bug③）：IO.exportCsv/exportChaoheFile 签名为 (records, root, cols)，调用侧误按 (records, cols) 传参，导致导出文件名变成「name,管理所,…」列名串、用户勾选的导出列被完全忽略；现按正确位置传参", "修复导入文件选择器挡掉 Excel（bug④）：单文件导入入口 accept 补 .xls/.xlsx，此前用户在系统选择器里根本看不到这两类文件", "查询/筛选置顶、实时命中计数、蓝色虚线圆圈圈选、单/多/无结果跳转、退出按钮/三击空白进主菜单、智能匹配确认、长操作「执行中，请稍后」遮罩等既有能力逐模块复核，确认无回归"]],
     ["v1.9.7", "2026-08-17", ["彻底修复导出>30张照片 0 字节：原生 exportCommit 改为 ByteArrayOutputStream 分片增量 Base64 解码（消除整包巨型 String 一次性 decode 的 OOM/静默空写），JS 侧补 `zipBytes.length<=22` 空包拦截；三套 APP 真编译验证", "修复导入照片丢失：importKmzBuffer 照片查表前缀不匹配（`files[fn]` vs `files['files/'+fn]`），改 fallback 取回，Node 实证取回 0→1 张", "导入过程新增「正在解析导入文件，请稍后…」全屏遮罩（busy）", "新增建筑物详情「分享」按钮：该建筑物照片+信息打包 zip 走系统分享面板，可选微信/QQ/飞书等", "灯箱照片支持「放大」：双击/双指捏合 + 拖拽平移，按钮一键还原", "筛选默认导出筛选结果、KMZ/奥维互通、菜单调浅、查询/筛选置顶、蓝圈跳转、退出/三击主菜单、智能匹配等既有能力保持；shipin/gujian 同步"]],
     ["v1.9.6", "2026-08-16", ["紧急修复「导出照片压缩包 0 字节」：根因①zip 中文文件名未置 UTF-8 标志位（local+central 双置位），部分解压工具按 CP437 解析→文件名乱码、照片「看不见」；②整包 base64 经 JSInterface 单次传给原生，超 Binder 1MB 事务上限→写入 0 字节。改为分块导出（exportStart/Append/Commit，每片≤512KB）+ zip UTF-8 标志 + 原生写盘后回调 APP.onExportResult 才提示成功（杜绝「假成功」）。已 Node 实证 UTF-8 文件名正确、压缩包非空", "新增「执行中，请稍后」全屏遮罩（busy）：导出照片时显式提示，避免等候误以为卡死", "菜单/抽屉/弹窗面板色（--panel）再调浅一档（#1d4a7a→#2a6098），缓解「菜单背景偏深」；筛选弹窗新增「当前查询关键词」提示区", "筛选实时计数、蓝色虚线圆圈圈选、单/多/无结果跳转、查询/筛选置顶、退出按钮/三击主菜单、智能匹配确认等既有能力保持不变"]],
     ["v1.9.5", "2026-08-16", ["照片压缩包崩溃根因彻底修复：崩溃不是「照片太大」，而是①主线程同步解压数 GB 压缩包阻塞 UI ②全分辨率图 base64 撑爆 WebView OOM ③临时目录从不清理。改为原生线程池异步解压 + 流式写盘 + 原生缩略图（RGB_565 ≤720px JPEG q72）+ 内容哈希，JS 仅收齐轻量元数据再匹配；全图仅在灯箱/保存/导出时按需单张加载", "新增原生持久化（persistImage）与按需加载（loadFullImage）桥接：导入完成自动把全图从临时目录迁入 app 私有 photos 目录，清理缓存不会误删已绑定照片", "新增「清理导入缓存」菜单：在导入完成 / App 启动 / 菜单手动三处调用，删除 inbox/uz_* 临时目录，杜绝残留累积", "导入匹配分块（每批 30 张 + 让出主线程）+ 弹窗照片封顶 18 张，超大批量不再卡死", "筛选实时计数、查询/筛选置顶、退出按钮/三击主菜单、智能匹配确认等既有能力保持不变"]],
@@ -4065,7 +4065,7 @@ function popupHtml(r) {
   }
   async function aiAddAt(latlng) {
     openModal("AI 智能建卡",
-      `<div class="hint">描述这个建筑物（如"温汤所管理段的一座节制闸，3 孔，闸宽 6 米"），AI 将自动提取名称/管理所/类型/参数并预填表单。</div>
+      `<div class="hint">描述这个建筑物（如"温泉所管理段的一座节制闸，3 孔，闸宽 6 米"），AI 将自动提取名称/管理所/类型/参数并预填表单。</div>
        <div class="field" style="margin-top:10px"><textarea id="aiAddDesc" class="inp" rows="4" placeholder="在此输入描述…"></textarea></div>`,
       `<button class="btn ghost" id="aiAddCancel">取消</button><button class="btn primary" id="aiAddGo">AI 提取并建卡</button>`);
     el("aiAddCancel").onclick = closeModal;
@@ -4107,8 +4107,8 @@ function popupHtml(r) {
     const favs = getFavs();
     const def = "窗口" + (favs.length + 1);
     openModal("收藏当前窗口",
-      `<div class="hint">将收藏当前地图视图范围（四角坐标 + 缩放），可随时返回，便于快速回到关注区域（如「温汤所某建筑物窗口」）。</div>
-       <div class="field"><label>窗口名称</label><input id="favName" class="inp" value="${esc(def)}" placeholder="如：温汤所建筑物窗口"></div>`,
+      `<div class="hint">将收藏当前地图视图范围（四角坐标 + 缩放），可随时返回，便于快速回到关注区域（如「温泉所某建筑物窗口」）。</div>
+       <div class="field"><label>窗口名称</label><input id="favName" class="inp" value="${esc(def)}" placeholder="如：温泉所建筑物窗口"></div>`,
       `<button class="btn ghost" id="favCancel">取消</button><button class="btn primary" id="favOk">收藏</button>`);
     el("favCancel").onclick = closeModal;
     el("favOk").onclick = () => {
@@ -4218,7 +4218,7 @@ function popupHtml(r) {
       <div class="ops-form">
         <div class="field"><label>类型</label><select id="plType" class="inp">${typeOpts}</select></div>
         <div class="field"><label>时间</label><input id="plTime" class="inp" type="datetime-local" class="inp"></div>
-        <div class="field"><label>范围</label><input id="plScope" class="inp" placeholder="如：温汤所全段"></div>
+        <div class="field"><label>范围</label><input id="plScope" class="inp" placeholder="如：温泉所全段"></div>
         <div class="field"><label>计划处理时间</label><input id="plHandle" class="inp" type="datetime-local"></div>
         <div class="field"><label>备注</label><input id="plNote" class="inp" placeholder="可选"></div>
         <button class="btn primary" id="plAdd">添加计划</button>
@@ -4299,7 +4299,7 @@ function popupHtml(r) {
     const html = `<div class="hint">我的巡视路线：选择途经建筑物，从默认出发位置起算总时长（路上 + 停留）。</div>
       <div class="ops-list">${rows}</div>
       <div class="ops-form">
-        <div class="field"><label>路线名称</label><input id="rtName" class="inp" placeholder="如：温汤所周巡"></div>
+        <div class="field"><label>路线名称</label><input id="rtName" class="inp" placeholder="如：温泉所周巡"></div>
         <div class="field"><label>途经建筑物（按顺序，Ctrl/⌘ 多选）</label><select id="rtPts" class="inp" multiple size="6">${bOpts}</select></div>
         <div class="field"><label>假设车速(km/h)</label><input id="rtSpeed" class="inp" inputmode="numeric" value="30"></div>
         <div class="field"><label>每点停留(分钟)</label><input id="rtStay" class="inp" inputmode="numeric" value="10"></div>
@@ -4509,7 +4509,7 @@ function popupHtml(r) {
     const online = localStorage.getItem("ai_online_v1") === "1";
     const html =
       `<div class="hint">本地优先：先在本机知识库检索；本地无结果且已开启「联网」（AI设置）时可点「联网查询」获取在线结果。结果标注来源 [本地]/[在线]。</div>` +
-      `<div class="field"><label>查询内容</label><input id="kbqInput" placeholder="如：温汤所 节制闸 工程参数"></div>` +
+      `<div class="field"><label>查询内容</label><input id="kbqInput" placeholder="如：温泉所 节制闸 工程参数"></div>` +
       `<div id="kbqOut" class="ai-out"></div>`;
     openModal("知识库查询", html, `<button class="btn ghost" id="kbqClose">关闭</button><button class="btn ghost" id="kbqOnline">联网查询</button><button class="btn primary" id="kbqConfirm">确认查询</button>`);
     el("kbqClose").onclick = closeModal;
