@@ -25,13 +25,13 @@
   }
   function utf8(str) { return new TextEncoder().encode(str); }
   function strFromUtf8(u) { return new TextDecoder().decode(u); }
-  // 管理所名称统一（与 app.js normOffice 保持一致）：去「管理」两字 + 清源河特例；
-  // 导出(kmz/ovkmz/kml/csv/清源河)统一套用，避免「温汤管理所」等原始名落盘，与导入/查询/筛选一致。
+  // 管理所名称统一（与 app.js normOffice 保持一致）：去「管理」两字 + 潮河特例；
+  // 导出(kmz/ovkmz/kml/csv/潮河)统一套用，避免「温泉管理所」等原始名落盘，与导入/查询/筛选一致。
   function normOffice(name) {
     if (!name) return "";
     const s = String(name).trim();
-    if (/清源河/.test(s)) return "清源河所";            // 清源河管理所 / 清源河总干渠管理所 → 清源河所
-    return s.replace(/管理所/g, "所");              // 温汤管理所→温汤所、埝湾管理所→埝湾所
+    if (/潮河/.test(s)) return "潮河所";            // 潮河管理所 / 潮河总干渠管理所 → 潮河所
+    return s.replace(/管理所/g, "所");              // 温泉管理所→温泉所、埝头管理所→埝头所
   }
 
   // ---------- CRC32 ----------
@@ -520,7 +520,7 @@ ${places}
     return out;
   }
 
-  // ---------- 清源河格式（CSV 兼容）----------
+  // ---------- 潮河格式（CSV 兼容）----------
   function buildChaohe(records, cols) {
     const C = [
       { k: "name", t: "名称", g: (r) => r.name },
@@ -789,7 +789,7 @@ ${places}
     return rows;
   }
 
-  // 矩阵 -> 记录（按中文表头定位，兼容 新统一/清源河/奥维旧格式/任意超集）
+  // 矩阵 -> 记录（按中文表头定位，兼容 新统一/潮河/奥维旧格式/任意超集）
   // 问题二修复：识别「参数说明」列（非仅 说明/Comment）、「段」列→station、「巡视次数」列→inspect；
   // 参数键值对保留空值键（如「备注:」），保证样本 CSV 往返不丢字段。
   function matrixToRecords(matrix) {
@@ -821,7 +821,7 @@ ${places}
       var inspectRaw = gi(row, ["巡视次数", "Inspect"]);
       var inspect = inspectRaw === "" ? 0 : (parseInt(inspectRaw, 10) || 0);
       var params = {};
-      // v2.4.9-C：条目分隔符同时接受 | ; 换行（奥维 comment 用 |，本 APP 历史导出用 ;，清源河用 ;）
+      // v2.4.9-C：条目分隔符同时接受 | ; 换行（奥维 comment 用 |，本 APP 历史导出用 ;，潮河用 ;）
       //            键值分隔同时接受 ASCII ":" 与全角 "："；空值键（如「备注:」）保留
       if (descText) descText.split(/[|;\r\n]+/).forEach(function (ln) {
         var line = String(ln == null ? "" : ln).trim();
@@ -1054,7 +1054,7 @@ ${places}
     exportKmz(records, root) { downloadBytes((root || "水利工程基础信息") + ".kmz", recordsToKmzBytes(records), "application/vnd.google-earth.kmz"); },
     exportKml(records, root) { downloadText((root || "水利工程基础信息") + ".kml", buildKML(records, root), "application/vnd.google-earth.kml+xml"); },
     exportCsv(records, root, cols) { downloadText((root || "水利工程基础信息") + ".csv", buildCsv(records, cols), "text/csv;charset=utf-8"); },
-    exportChaoheFile(records, root, cols) { downloadText((root || "水利工程基础信息") + "_清源河.csv", buildChaohe(records, cols), "text/csv;charset=utf-8"); },
+    exportChaoheFile(records, root, cols) { downloadText((root || "水利工程基础信息") + "_潮河.csv", buildChaohe(records, cols), "text/csv;charset=utf-8"); },
     parseAttrCsv, parseXlsxToRecords, parseXlsToRecords, xlsxMatrix, // xlsxMatrix 导出供 kb.js 外部文件智能转换（v2.4.5）
     buildAttrCsv, buildAttrXlsx, buildAttrXls,
     attrCsvOf: buildAttrCsv, attrXlsxOf: buildAttrXlsx, attrXlsOf: buildAttrXls,
