@@ -25,13 +25,13 @@
   }
   function utf8(str) { return new TextEncoder().encode(str); }
   function strFromUtf8(u) { return new TextDecoder().decode(u); }
-  // 管理所名称统一（与 app.js normOffice 保持一致）：去「管理」两字 + 潮河特例；
-  // 导出(kmz/ovkmz/kml/csv/潮河)统一套用，避免「温泉管理所」等原始名落盘，与导入/查询/筛选一致。
+  // 管理所名称统一（与 app.js normOffice 保持一致）：去「管理」两字 + 清源河特例；
+  // 导出(kmz/ovkmz/kml/csv/清源河)统一套用，避免「温汤管理所」等原始名落盘，与导入/查询/筛选一致。
   function normOffice(name) {
     if (!name) return "";
     const s = String(name).trim();
-    if (/潮河/.test(s)) return "潮河所";            // 潮河管理所 / 潮河总干渠管理所 → 潮河所
-    return s.replace(/管理所/g, "所");              // 温泉管理所→温泉所、埝头管理所→埝头所
+    if (/清源河/.test(s)) return "清源河所";            // 清源河管理所 / 清源河总干渠管理所 → 清源河所
+    return s.replace(/管理所/g, "所");              // 温汤管理所→温汤所、埝湾管理所→埝湾所
   }
 
   // ---------- CRC32 ----------
@@ -520,7 +520,7 @@ ${places}
     return out;
   }
 
-  // ---------- 潮河格式（CSV 兼容）----------
+  // ---------- 清源河格式（CSV 兼容）----------
   function buildChaohe(records, cols) {
     const C = [
       { k: "name", t: "名称", g: (r) => r.name },
@@ -538,6 +538,15 @@ ${places}
     for (const r of records) lines.push(use.map((c) => (c.k === "lon" || c.k === "lat") ? c.g(r) : esc(c.g(r))).join(","));
     return "\uFEFF" + lines.join("\n");
   }
+  // v2.4.9-C：奥维风格的文件夹路径（/根/管理所/段--类型），导入时可按层级还原 管理所/段/类型
+  function folderPathOf(r) {
+    var o = normOffice(r.office) || "";
+    if (!o) return "";
+    var seg = r.station || "", bt = r.btype || "";
+    var tail = (seg && bt) ? (seg + "--" + bt) : (seg || bt);
+    return "/" + (r.mgmt || "基础信息") + "/" + o + (tail ? "/" + tail : "");
+  }
+
   // CSV 导出：与「水利工程基础信息一张图_建筑物_*.csv」样本格式对齐（独立列，非 folder 编码），
   // 保证 APP 导出的 CSV 可再导入、且与用户样本文件一致兼容（问题二）。
   function buildCsv(records, cols) {
@@ -550,7 +559,8 @@ ${places}
       { k: "btype", t: "建筑物类型", g: (r) => r.btype || "" },
       { k: "lat", t: "纬度", g: (r) => r.lat },
       { k: "lon", t: "经度", g: (r) => r.lon },
-      { k: "params", t: "参数说明", g: (r) => Object.keys(r.params || {}).map((x) => x + " : " + (r.params[x] == null ? "" : r.params[x])).join(" ; ") },
+      { k: "folder", t: "文件夹", g: (r) => folderPathOf(r) },
+      { k: "params", t: "Comment", g: (r) => Object.keys(r.params || {}).map((x) => x + " : " + (r.params[x] == null ? "" : r.params[x])).join(" | ") },
       { k: "inspect", t: "巡视次数", g: (r) => (r.inspect != null ? r.inspect : 0) },
     ];
     const use = cols && cols.length ? C.filter((c) => cols.includes(c.k)) : C;
@@ -751,6 +761,20 @@ ${places}
     return xlsBytesFromMatrix(rows);
   }
 
+  // v2.4.9-C：文本解码自动识别（BOM / UTF-8 / GB18030）
+  // 奥维导出的 CSV/KML 常见为 GBK（ANSI）：按 UTF-8 硬读会整表乱码，表头「名称」找不到 →
+  // 报「未找到"名称"列（name/名称）」。此处先按 UTF-8 严格解码，失败再退 GB18030/GBK/Big5。
+  function decodeText(bytes) {
+    var u = (bytes && bytes.length !== undefined) ? bytes : new Uint8Array(bytes || []);
+    if (u.length >= 3 && u[0] === 0xEF && u[1] === 0xBB && u[2] === 0xBF) return strFromUtf8(u.subarray(3));
+    if (u.length >= 2 && u[0] === 0xFF && u[1] === 0xFE) { try { return new TextDecoder("utf-16le").decode(u); } catch (e) {} }
+    if (u.length >= 2 && u[0] === 0xFE && u[1] === 0xFF) { try { return new TextDecoder("utf-16be").decode(u); } catch (e) {} }
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(u); } catch (e) {}
+    var encs = ["gb18030", "gbk", "big5"];
+    for (var i = 0; i < encs.length; i++) { try { return new TextDecoder(encs[i]).decode(u); } catch (e2) {} }
+    return strFromUtf8(u);
+  }
+
   // CSV -> 矩阵
   function csvToMatrix(text) {
     var rows = [], i = 0, field = "", row = [], inq = false;
@@ -765,7 +789,7 @@ ${places}
     return rows;
   }
 
-  // 矩阵 -> 记录（按中文表头定位，兼容 新统一/潮河/奥维旧格式/任意超集）
+  // 矩阵 -> 记录（按中文表头定位，兼容 新统一/清源河/奥维旧格式/任意超集）
   // 问题二修复：识别「参数说明」列（非仅 说明/Comment）、「段」列→station、「巡视次数」列→inspect；
   // 参数键值对保留空值键（如「备注:」），保证样本 CSV 往返不丢字段。
   function matrixToRecords(matrix) {
@@ -797,7 +821,17 @@ ${places}
       var inspectRaw = gi(row, ["巡视次数", "Inspect"]);
       var inspect = inspectRaw === "" ? 0 : (parseInt(inspectRaw, 10) || 0);
       var params = {};
-      if (descText) descText.split(/[;\n]/).forEach(function (ln) { if (ln.indexOf(":") >= 0) { var a = ln.split(":"); var k = a[0].trim(); var v = a.slice(1).join(":").trim(); params[k] = v; } });
+      // v2.4.9-C：条目分隔符同时接受 | ; 换行（奥维 comment 用 |，本 APP 历史导出用 ;，清源河用 ;）
+      //            键值分隔同时接受 ASCII ":" 与全角 "："；空值键（如「备注:」）保留
+      if (descText) descText.split(/[|;\r\n]+/).forEach(function (ln) {
+        var line = String(ln == null ? "" : ln).trim();
+        if (!line) return;
+        var k = "", v = "";
+        if (line.indexOf(":") >= 0) { var a = line.split(":"); k = a[0].trim(); v = a.slice(1).join(":").trim(); }
+        else if (line.indexOf("：") >= 0) { var b = line.split("："); k = b[0].trim(); v = b.slice(1).join("：").trim(); }
+        else return;
+        if (k) params[k] = v;
+      });
       out.push({
         id: name + "_" + lon.toFixed(5) + "_" + lat.toFixed(5), name: name, lon: lon, lat: lat,
         office: office, mstation: mstation, station: station, btype: btype,
@@ -1011,6 +1045,7 @@ ${places}
     escapeXml, crc32, zipStore, unzip, unzipStream, unzipCount, buildKML, buildCsv, buildChaohe, recordsToKmzBytes,
     parseKmlToRecords, parseGpxToRecords, parseJsonToRecords, importKmzBuffer, parseCsvToRecords,
     downloadBytes, downloadText, openExportPathSettings, exportDir, setExportDir, exportAsk, setExportAsk, genId, bytesToB64, b64ToBytes, utf8,
+    decodeText, // v2.4.9-C 文本编码自动识别
     sha256Hex, // 内容去重哈希（v1.8.0 定义；曾漏导出导致导入 ovkmz 报「IO.sha256Hex is not a function」）
     sha256: { hex: sha256Hex }, // 兼容别名（对象式调用 io.sha256.hex() 也可用）
     csvOf: buildCsv, chaoheOf: buildChaohe,
@@ -1019,7 +1054,7 @@ ${places}
     exportKmz(records, root) { downloadBytes((root || "水利工程基础信息") + ".kmz", recordsToKmzBytes(records), "application/vnd.google-earth.kmz"); },
     exportKml(records, root) { downloadText((root || "水利工程基础信息") + ".kml", buildKML(records, root), "application/vnd.google-earth.kml+xml"); },
     exportCsv(records, root, cols) { downloadText((root || "水利工程基础信息") + ".csv", buildCsv(records, cols), "text/csv;charset=utf-8"); },
-    exportChaoheFile(records, root, cols) { downloadText((root || "水利工程基础信息") + "_潮河.csv", buildChaohe(records, cols), "text/csv;charset=utf-8"); },
+    exportChaoheFile(records, root, cols) { downloadText((root || "水利工程基础信息") + "_清源河.csv", buildChaohe(records, cols), "text/csv;charset=utf-8"); },
     parseAttrCsv, parseXlsxToRecords, parseXlsToRecords, xlsxMatrix, // xlsxMatrix 导出供 kb.js 外部文件智能转换（v2.4.5）
     buildAttrCsv, buildAttrXlsx, buildAttrXls,
     attrCsvOf: buildAttrCsv, attrXlsxOf: buildAttrXlsx, attrXlsOf: buildAttrXls,
