@@ -239,7 +239,7 @@
       const ql = q.toLowerCase();
       const list = recs.filter((r) => !ql || (r.name || "").toLowerCase().includes(ql) || (dm.recMeta(r) || "").toLowerCase().includes(ql)).slice(0, 200);
       const html =
-        `<div class="field"><input id="pkSearch" class="inp" placeholder="输入名称 / 关键字搜索建筑物台账（如：跌水节制闸 / 史山所 / 进水闸设计流量）" value="${esc2(q)}"></div>` +
+        `<div class="field"><input id="pkSearch" class="inp" placeholder="输入名称 / 关键字搜索建筑物台账（如：跌水节制闸 / 翠屏山所 / 进水闸设计流量）" value="${esc2(q)}"></div>` +
         (!q && seedChips ? `<div class="field"><label>试试搜（点击即用）</label><div class="chips" id="pkSeed">${seedChips}</div></div>` : "") +
         `<div class="filelist" id="pkList">` +
         list.map((r) => `<div class="pk-item" data-id="${esc2(r.id)}"><span class="pk-name">${esc2(dm.recName(r))}</span><span class="pk-meta">${esc2(dm.recMeta(r) || "")}</span></div>`).join("") +
@@ -445,7 +445,7 @@
     dm = dm || AI.domain;
     if (!dm) return toast("AI 未初始化");
     openModal("智能问询 · " + (dm.appName || "台账"),
-      `<div class="hint">直接问机构级 / 汇总类问题，例如「${dm.internal ? "京密引水管理处有几个管理所" : "某古建的营造年代"}」。系统会注入本地台账统计信息，由大模型基于真实数据作答。</div>
+      `<div class="hint">直接问机构级 / 汇总类问题，例如「${dm.internal ? "清源灌区管理处有几个管理所" : "某古建的营造年代"}」。系统会注入本地台账统计信息，由大模型基于真实数据作答。</div>
        <div class="field" style="margin-top:10px"><textarea id="aiFQIn" class="inp" rows="3" placeholder="输入你的问题…（Ctrl/⌘+Enter 发送）"></textarea></div>
        <div id="aiFQOut" class="ai-out"></div><div id="aiFQActions" class="ai-actions"></div><div id="aiFQFollowups" class="ai-followups"></div>`,
       `<button class="btn ghost" id="aiFQClose">关闭</button><button class="btn primary" id="aiFQSend">问询</button>`);
