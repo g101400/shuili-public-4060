@@ -1,4 +1,4 @@
-/* ai.js —— 通用大模型 AI 引擎（三端复用：古建/水利/感知）
+/* ai.js —— 通用智能分析引擎（三端复用：古建/水利/感知）
  * 不依赖任何框架，仅用浏览器 fetch + 全局 helpers（el/openModal/closeModal/toast/esc/busy/Store）。
  * 领域差异由各 App 在加载后设置 window.AI.domain 适配（见 app.js）。
  *
@@ -9,9 +9,9 @@
 (function (global) {
   const LS_KEY = "ai_settings_v1";
 
-  // OpenRouter 默认密钥（用户 jykjk2010 提供，2026-08-28 轮换导入）。
+  // 默认密钥从独立配置文件 ai_config.js 读取（window.SHUILI_AI_CONFIG.openrouterKey）。
   // 仅用于本地 App 调用；如对外分发请改为空字符串让用户自行填写，并建议到 openrouter.ai 重置该密钥。
-  const DEFAULT_OR_KEY = """";
+  const DEFAULT_OR_KEY = (window.SHUILI_AI_CONFIG && window.SHUILI_AI_CONFIG.openrouterKey) || "";
 
   // ---------- 设置持久化 ----------
   // 默认预置 3 个 OpenRouter 免费模型（已实测可用 2026-08-28）：
@@ -120,13 +120,13 @@
   }
 
   async function strategyCall(prompt, opts) {
-    // 需求③ + v2.4.6 智能框架：注入本地知识库上下文 + Hermes 自我学习记忆（无则优雅降级）
+    // v2.4.6 智能分析框架：注入本地知识库上下文 + Hermes 自我学习记忆（无则优雅降级）
     const kbc = (window.__kbContext && typeof window.__kbContext === "function") ? await window.__kbContext(prompt) : "";
     const memc = (window.__kbMemoryContext && typeof window.__kbMemoryContext === "function") ? await window.__kbMemoryContext() : "";
     let fullPrompt = prompt;
     if (kbc) fullPrompt = "【本地知识库参考】\n" + kbc + "\n\n---\n\n" + fullPrompt;
     if (memc) fullPrompt = "【自我学习记忆·Hermes】\n" + memc + "\n\n---\n\n" + fullPrompt;
-    window.__lastAIPrompt = fullPrompt;   // v2.4.8：供「查看提示词」回显
+    window.__lastPrompt = fullPrompt;   // v2.4.8：供「查看提示词」回显
     const s = loadSettings();
     const order = resolveOrder(s);
     let lastErr;
@@ -277,7 +277,7 @@
     } catch (e) { toast("存疑保存失败：" + e.message); }
   }
   function kbShowPrompt() {
-    const p = window.__lastAIPrompt || "";
+    const p = window.__lastPrompt || "";
     openModal("本次提示词（已注入知识库）",
       '<div class="hint">下面是本次实际发送给大模型的完整提示词（含知识库片段与长期记忆），可复制后自行投喂其他模型。</div>' +
       '<textarea id="kbtP" class="inp" rows="14" style="width:100%">' + esc2(p) + '</textarea>',
@@ -290,7 +290,7 @@
   }
 
   // ---------- 智能查询 ----------
-  // 需求①：联网在线查询开关（仅内部台账域 水利/感知 显示，默认本地查询）
+  // v2.4.6：联网在线查询开关（仅内部台账域 水利/感知 显示，默认本地查询）
   const ONLINE_KEY = "ai_online_v1";
   function querySysPrompt(dm, online) {
     if (!dm.internal) return "你是古建文化知识助手，回答准确、专业、简明。";
@@ -307,7 +307,7 @@
     </div>`;
   }
 
-  // 需求③：查询历史记录（按时间保存，可查看 / 强制二次查询，省词元）
+  // 查询历史记录（按时间保存，可查看 / 强制二次查询，省词元）
   const HIST_KEY = "ai_query_hist_v1";
   const HIST_MAX = 50;
   function getHistory() { try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch (e) { return []; } }
@@ -317,7 +317,7 @@
     while (h.length > HIST_MAX) h.pop();
     try { localStorage.setItem(HIST_KEY, JSON.stringify(h)); } catch (e) {}
   }
-  // 需求④：查询结果存入知识库须精简；默认不保存，由用户主动点「保存到知识库」
+  // 查询结果存入知识库须精简；默认不保存，由用户主动点「保存到知识库」
   function saveQueryToKB(prompt, answer, dm, online) {
     if (!window.KB) { toast("知识库未启用"); return; }
     const plain = String(answer).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
@@ -383,7 +383,7 @@
       if (window.KB) el("aiSaveKB").onclick = () => saveQueryToKB(prompt, txt, dm, online);
     };
     const doQuery = async () => {
-      el("aiOut").innerHTML = '<div class="hint">正在调用大模型查询，请稍候…</div>';
+      el("aiOut").innerHTML = '<div class="hint">正在调用分析引擎查询，请稍候…</div>';
       const box = document.getElementById("aiActions"); if (box) box.innerHTML = "";
       try {
         const txt = await strategyCall(prompt, { system: querySysPrompt(dm, online) });
@@ -445,7 +445,7 @@
     dm = dm || AI.domain;
     if (!dm) return toast("AI 未初始化");
     openModal("智能问询 · " + (dm.appName || "台账"),
-      `<div class="hint">直接问机构级 / 汇总类问题，例如「${dm.internal ? "清源灌区管理处有几个管理所" : "某古建的营造年代"}」。系统会注入本地台账统计信息，由大模型基于真实数据作答。</div>
+      `<div class="hint">直接问机构级 / 汇总类问题，例如「${dm.internal ? "清源灌区管理处有几个管理所" : "某古建的营造年代"}」。系统会注入本地台账统计信息，由分析引擎基于真实数据作答。</div>
        <div class="field" style="margin-top:10px"><textarea id="aiFQIn" class="inp" rows="3" placeholder="输入你的问题…（Ctrl/⌘+Enter 发送）"></textarea></div>
        <div id="aiFQOut" class="ai-out"></div><div id="aiFQActions" class="ai-actions"></div><div id="aiFQFollowups" class="ai-followups"></div>`,
       `<button class="btn ghost" id="aiFQClose">关闭</button><button class="btn primary" id="aiFQSend">问询</button>`);
@@ -453,7 +453,7 @@
     const send = async () => {
       const q = (el("aiFQIn") ? el("aiFQIn").value : "").trim();
       if (!q) { toast("请输入问题"); return; }
-      el("aiFQOut").innerHTML = '<div class="hint">正在调用大模型问询，请稍候…</div>';
+      el("aiFQOut").innerHTML = '<div class="hint">正在调用分析引擎问询，请稍候…</div>';
       const actBox = document.getElementById("aiFQActions"); if (actBox) actBox.innerHTML = "";
       try {
         const ctx = (dm.orgContext && typeof dm.orgContext === "function") ? dm.orgContext(q) : "";
@@ -484,7 +484,7 @@
   // ---------- 智能更新 ----------
   async function runUpdate(dm, rec) {
     openModal("智能更新 · " + dm.recName(rec),
-      `<div class="hint">大模型将基于已知信息补全/校正该条目，请人工复核后应用（仅写入本地改动，可随时重置）。</div><div id="aiUpd"></div>`,
+      `<div class="hint">分析引擎将基于已知信息补全/校正该条目，请人工复核后应用（仅写入本地改动，可随时重置）。</div><div id="aiUpd"></div>`,
       `<button class="btn ghost" id="aiUpdClose">关闭</button><button class="btn primary" id="aiUpdApply" disabled>应用更新</button>`);
     el("aiUpdClose").onclick = closeModal;
     const sys = dm.internal
@@ -638,7 +638,7 @@
       const defOpts = s.models.map((m) => `<option value="${esc2(m.id)}" ${m.id === s.defaultModel ? "selected" : ""}>${esc2(m.name || m.id)}</option>`).join("");
       const orderOpts = s.models.map((m) => `<option value="${esc2(m.id)}" ${((s.strategy.order || []).indexOf(m.id) >= 0) ? "selected" : ""}>${esc2(m.name || m.id)}</option>`).join("");
       const html =
-        `<div class="hint">配置大模型接口。默认引用地址为 OpenRouter（OpenAI 兼容协议）。也可填本地部署模型（Ollama 默认 http://localhost:11434/v1，LM Studio http://localhost:1234/v1）。浏览器/PWA 下本地模型需开启 CORS；安卓端 localhost 指向手机本身，请填 PC 局域网 IP。</div>
+        `<div class="hint">配置分析引擎接口。默认引用地址为 OpenRouter（OpenAI 兼容协议）。也可填本地部署模型（Ollama 默认 http://localhost:11434/v1，LM Studio http://localhost:1234/v1）。浏览器/PWA 下本地模型需开启 CORS；安卓端 localhost 指向手机本身，请填 PC 局域网 IP。</div>
          <div id="aiModels">${modelRows()}</div>
          <button class="btn ghost" id="aiAddModel">＋ 添加模型</button>
          <div class="field" style="margin-top:12px"><label>默认模型</label><select id="aiDefault" class="inp">${defOpts}</select></div>
@@ -648,7 +648,7 @@
            <option value="roundrobin" ${s.strategy.mode === "roundrobin" ? "selected" : ""}>轮询切换（多模型负载均衡）</option>
          </select></div>
          <div class="field" id="aiOrderWrap" style="${s.strategy.mode === "single" ? "display:none" : ""}"><label>策略模型顺序（Ctrl/⌘ 多选）</label><select id="aiOrder" class="inp" multiple size="4">${orderOpts}</select></div>`;
-      openModal("大模型 AI 设置", html,
+      openModal("智能分析设置", html,
         `<button class="btn ghost" id="aiSetCancel">取消</button><button class="btn primary" id="aiSetSave">保存</button><button class="btn ghost" id="aiSetTest">测试默认模型</button>`);
       el("aiSetCancel").onclick = closeModal;
       el("aiStrat").onchange = () => { el("aiOrderWrap").style.display = el("aiStrat").value === "single" ? "none" : ""; };
@@ -671,7 +671,7 @@
         s.strategy.last = 0;
         saveSettings(s);
         closeModal();
-        toast("AI 设置已保存");
+        toast("智能分析设置已保存");
       };
     };
     render();
