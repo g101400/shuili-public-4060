@@ -96,7 +96,7 @@
   function jput(e) { return tx("readwrite").then(function (os) { return new Promise(function (res, rej) { var r = os.put(e); r.onsuccess = function () { res(e); }; r.onerror = function () { rej(r.error); }; }); }); }
   function jdel(id) { return tx("readwrite").then(function (os) { return new Promise(function (res, rej) { var r = os.delete(id); r.onsuccess = function () { res(); }; r.onerror = function () { rej(r.error); }; }); }); }
 
-  // ---------- 知识库镜像（让智能AI可查询；按 id 幂等，导入不重复）----------
+  // ---------- 知识库镜像（让智能分析可查询；按 id 幂等，导入不重复）----------
   function mirrorKB(e) {
     if (!KB || !KB.put) return Promise.resolve();
     try {
