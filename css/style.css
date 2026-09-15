@@ -103,6 +103,8 @@ html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Seg
 .fav-item .fi-ico{flex:0 0 auto;font-size:18px}
 .fav-item .fi-name{flex:1;min-width:0;font-weight:500}
 .fav-item .fi-meta{color:var(--muted);font-size:12px;flex:0 0 auto}
+.fav-item .fi-rename{flex:0 0 auto;margin-left:6px;padding:2px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}
+.fav-item .fi-rename:hover{background:rgba(108,193,255,.18);color:var(--txt)}
 
 /* 筛选 */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
