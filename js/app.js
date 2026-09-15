@@ -164,11 +164,12 @@
   const filterActive = () => !!(filter.office.length || filter.mgmt.length || filter.station.length || filter.btype.length || (filter.q && filter.q.trim()) || (filter.photo && filter.photo.mode !== "all"));
   let vecLayer = null, cvaLayer = null, imgLayer = null, ciaLayer = null, basemapOn = false, layerType = "vec";
   let lastCenter = null, myLoc = null, myLocMarker = null;
+  let lastWindowId = null;   // 需求一：记住上次返回的收藏窗口，下次进入自动恢复该视图
   let measureMode = false, measurePts = [], measureLine = null;
   let nearbyCenter = null, nearbyRadius = null, nearbyCircle = null, nearbyBtypes = [];
   const DEFAULT_CENTER = [40.30876, 116.61107]; // 怀柔水库所 质心
   const DEFAULT_ZOOM = 12;
-  const filter = { bureau: [], mgmt: [], office: [], station: [], btype: [], q: "", photo: { mode: "all", min: 0 } };
+  const filter = { bureau: [], mgmt: [], office: [], station: [], btype: [], btypeInvert: false, q: "", photo: { mode: "all", min: 0 } };
   let pickMode = false, pendingLatLng = null, editId = null, formPhotos = [], formColor = "#3da9fc", formShape = "drop";
   let coordResult = null, pickForCoord = false, pendingCoordCb = null;   // 获取经纬度：地图点选回填 / 添加建筑物第1步回调
   // 批量导入缓冲（原生逐文件回调）
@@ -353,6 +354,13 @@
     DELTA = await Store.get();
     applyDims();
     merge();
+    // 首开默认：5 类常见水工建筑物（需求五：首次进入显示默认所选建筑物；校验存在，避免空选=显示全部）
+    if (!Store.ui.get()) {
+      const DEF_BTYPES = ["节制闸", "泄洪闸", "进水闸", "溢洪道", "倒虹吸"];
+      filter.btype = DEF_BTYPES.filter((t) => DIMS.btypes.includes(t));
+      filter.btypeInvert = false;
+      saveUI();
+    }
     render();
     pruneFilter();   // v2.5.0 需求七：数据与名单就绪后，清掉上次会话残留的失效筛选值
   }
@@ -478,7 +486,10 @@
   function passFilter(r) {
     if (filter.office.length && !filter.office.includes(normOffice(orgVal(r, "office")))) return false;
     if (filter.mgmt.length && !filter.mgmt.includes(orgVal(r, "mgmt"))) return false;
-    if (filter.btype.length && !filter.btype.includes(r.btype)) return false;
+    if (filter.btype.length) {
+      const hit = filter.btype.includes(r.btype);
+      if (filter.btypeInvert ? hit : !hit) return false;   // 需求六：反选模式下选中类型被排除
+    }
     if (filter.station.length && !filter.station.includes(r.station)) return false;
     if (filter.photo && filter.photo.mode !== "all") {
       const cnt = (r.photos || []).length;
@@ -486,7 +497,13 @@
       if (filter.photo.mode === "none" && cnt > 0) return false;
       if (filter.photo.mode === "min" && cnt < (filter.photo.min || 0)) return false;
     }
-    if (filter.q && !`${r.name} ${r.office} ${normOffice(r.office)} ${r.station} ${r.btype}`.toLowerCase().includes(filter.q.toLowerCase())) return false;
+    if (filter.q) {
+      const qt = filter.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (qt.length) {
+        const hay = `${r.name} ${r.office} ${normOffice(r.office)} ${r.station} ${r.btype}`.toLowerCase();
+        if (!qt.every((t) => hay.includes(t))) return false;   // 需求：多关键词 AND（如「节制闸 西田各庄所」= 节制闸 ∩ 西田各庄所）
+      }
+    }
     if (nearbyCenter && nearbyRadius != null) {
       if (haversine(nearbyCenter, { lat: r.lat, lon: r.lon }) > nearbyRadius) return false;
       if (nearbyBtypes.length && !nearbyBtypes.includes(r.btype)) return false;
@@ -502,28 +519,32 @@
       filter.mgmt = Array.isArray(s.mgmt) ? s.mgmt : [];
       filter.station = Array.isArray(s.station) ? s.station : [];
       filter.btype = Array.isArray(s.btype) ? s.btype : [];
+      filter.btypeInvert = s.btypeInvert === true;
       basemapOn = s.basemap === true;
       layerType = (s.layer === "img") ? "img" : "vec";
       lastCenter = s.center || null;
+      lastWindowId = s.lastWindowId || null;
     } else {
       // 首次打开：默认「京密引水管理处 + 水库所」(v2.4.3 管理处默认可多选，默认局管理处生效)，仅载该子集→开图更快不卡顿
       filter.mgmt = [orgDefault("mgmt")];
       filter.office = (Array.isArray(orgDefault("office")) ? orgDefault("office") : [orgDefault("office")]).filter(Boolean);
+      filter.btypeInvert = false;
       basemapOn = false;
       layerType = "vec";
       lastCenter = null;
+      lastWindowId = null;
     }
   }
   function saveUI() {
     const s = Store.ui.get() || {};
     // 合并保留既有 UI 偏好（收藏窗口 favs、旧版单点 fav 等），避免覆盖式写入导致丢失
-    Store.ui.set(Object.assign({}, s, { office: filter.office, mgmt: filter.mgmt, station: filter.station, btype: filter.btype, basemap: basemapOn, layer: layerType, center: lastCenter }));
+    Store.ui.set(Object.assign({}, s, { office: filter.office, mgmt: filter.mgmt, station: filter.station, btype: filter.btype, btypeInvert: filter.btypeInvert, basemap: basemapOn, layer: layerType, center: lastCenter, lastWindowId }));
   }
 
   // ---------- 地图 ----------
   function initMap() {
     // attributionControl 去掉默认「Leaflet」外链（https://leafletjs.com）：离线/弱网点该链接会 ERR_CONNECTION_TIMED_OUT；本地资源已离线化
-    map = L.map("map", { zoomControl: true, attributionControl: L.control.attribution({ prefix: false }) }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+    map = L.map("map", { zoomControl: true, preferCanvas: true, attributionControl: L.control.attribution({ prefix: false }) }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
     const baseOpts = { maxZoom: 18, subdomains: "0123456789" };
     const tk = (lyr) => `https://t0.tianditu.gov.cn/${lyr}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${lyr}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${TIANDITU}`;
     vecLayer = L.tileLayer(tk("vec"), baseOpts);
@@ -709,7 +730,7 @@
   }
   // 清除筛选：清空条件、搜索框与圆圈，恢复正常蓝色正水滴
   function clearFilter() {
-    filter.office = []; filter.btype = []; filter.q = ""; filter.photo = { mode: "all", min: 0 };
+    filter.office = []; filter.btype = []; filter.btypeInvert = false; filter.q = ""; filter.photo = { mode: "all", min: 0 };
     const s = el("search"); if (s) s.value = "";
     if (filterCircle) { overlayGroup.removeLayer(filterCircle); filterCircle = null; }
     render(); saveUI();
@@ -813,6 +834,7 @@ function popupHtml(r) {
       (kwHist.length ? `<div class="fgroup"><div class="ftitle collapsible" id="kwHistTog" style="cursor:pointer">🔎 关键词历史（<b class="cnt">${kwHist.length}</b>）<span class="tg">＋</span></div><div class="chips" id="kwHistBox" style="display:none">` + kwHist.map((k) => `<span class="chip kw" data-kw="${esc(k)}">${esc(k)}</span>`).join("") + `</div></div>` : "") +
       (filter.q && filter.q.trim() ? `<div class="fqhint">🔎 当前查询关键词：<b>${esc(filter.q.trim())}</b><span class="fqsub">（筛选在此基础上叠加，下方命中数已计入）</span></div>` : "") +
       group("建筑物类型", DIMS.btypes, filter.btype) +
+      `<div class="fgroup"><div class="ftitle">建筑物类型筛选模式</div><div class="chips"><span class="chip ${filter.btypeInvert ? "on" : ""}" id="btInvert">🔄 反选（开启后选中类型将被<b>排除</b>）</span></div></div>` +
       group("管理处", DIMS.mgmts, filter.mgmt) +
       group("管理所", DIMS.offices, filter.office) +
       group("管理站", DIMS.stations, filter.station) +
@@ -833,6 +855,7 @@ function popupHtml(r) {
     // v2.5.0 需求七：在弹窗内提示被自动清除的失效条件（弹窗打开后再提示，否则 toast 被遮住）
     if (dropped) setTimeout(() => toast(`已自动清除 ${dropped} 个已失效的筛选条件（设置中已删除/改名）`), 80);
     const body = el("modalBody");
+    let liveInvert = filter.btypeInvert;   // 反选开关的实时态（需求六）
     const liveCount = () => {
       const bo = [...body.querySelectorAll('.chip[data-grp="管理所"].on')].map((c) => c.dataset.v);
       const mg = [...body.querySelectorAll('.chip[data-grp="管理处"].on')].map((c) => c.dataset.v);
@@ -844,7 +867,7 @@ function popupHtml(r) {
         if (bo.length && !bo.includes(normOffice(orgVal(r, "office")))) continue;
         if (mg.length && !mg.includes(orgVal(r, "mgmt"))) continue;
         if (st.length && !st.includes(r.station)) continue;
-        if (bt.length && !bt.includes(r.btype)) continue;
+        if (bt.length) { const hit = bt.includes(r.btype); if (liveInvert ? hit : !hit) continue; }   // 反选：选中类型排除
         if (q && !`${r.name} ${r.office} ${normOffice(r.office)} ${r.station} ${r.btype}`.toLowerCase().includes(q)) continue;
         if (filter.photo && filter.photo.mode !== "all") {
           const cnt = (r.photos || []).length;
@@ -866,6 +889,9 @@ function popupHtml(r) {
       if (cntEl) cntEl.textContent = sel.length;   // 守卫：照片组无 .cnt，不抛错
       refreshHit();
     });
+    // 反选开关（需求六）
+    const btInv = el("btInvert");
+    if (btInv) btInv.onclick = () => { liveInvert = !liveInvert; btInv.classList.toggle("on", liveInvert); refreshHit(); };
     // 关键词历史：展开/收起 + 点击复用
     const kwTog = el("kwHistTog"), kwBox = el("kwHistBox");
     if (kwTog) kwTog.onclick = () => {
@@ -899,6 +925,7 @@ function popupHtml(r) {
     el("fExit").onclick = closeModal;
     el("fApply").onclick = () => {
       filter.btype = [...body.querySelectorAll('.chip[data-grp="建筑物类型"].on')].map((c) => c.dataset.v);
+      filter.btypeInvert = liveInvert;   // 需求六：反选状态随筛选一并生效并持久化
       filter.mgmt = [...body.querySelectorAll('.chip[data-grp="管理处"].on')].map((c) => c.dataset.v);
       filter.office = [...body.querySelectorAll('.chip[data-grp="管理所"].on')].map((c) => c.dataset.v);
       filter.station = [...body.querySelectorAll('.chip[data-grp="管理站"].on')].map((c) => c.dataset.v);
@@ -919,7 +946,7 @@ function popupHtml(r) {
         toast(`已筛选出 ${rs.length} 个建筑物，已用绿色虚线圆圈圈出并居中显示`);
       }
     };
-    el("fReset").onclick = () => { filter.office = []; filter.mgmt = []; filter.station = []; filter.btype = []; filter.photo = { mode: "all", min: 0 }; openFilter(); };
+    el("fReset").onclick = () => { filter.office = []; filter.mgmt = []; filter.station = []; filter.btype = []; filter.btypeInvert = false; filter.photo = { mode: "all", min: 0 }; openFilter(); };
   }
 
   // ---------- 管理所 / 管理站 维护（手动增改 + 双向联动）----------
@@ -3073,7 +3100,7 @@ function popupHtml(r) {
       <b>🧠 记忆管理</b>：知识库内置 Hermes 自我学习机制，AI 查询/更新/纠错会自动沉淀记忆，下次交互更贴合你的业务；与已接入大模型有机融合（提示词自动拼装知识库精准片段 + 自学习记忆）。<br>
       <b>⬆️ 升级与备份</b>：菜单→设置→软件升级，公开版/内部版均经<b>百度网盘自动升级</b>（填入 latest.json 直读地址即可，下载填网盘分享链接）；升级前先「升级数据导出」（可自定义文件夹/文件名，默认「水利一张图备份+日期.bak」），该包可回灌「升级数据导入」（会覆盖本机全部数据，已明确提示风险）。<br>
       <b>📝 备忘录 / 游记</b>：水利/感知「写备忘录」、古建「写游记」——所见即所得（字体/字号/表情/图片/表格），默认绑定对象，关键词筛选，导出 MD+JSON，内容镜像知识库供 AI 查询。<br>
-      <b>🤖 智能 AI</b>：智能查询/智能问询/AI 更新/纠错/对话，均基于已接入的大模型（设置→大模型 AI 设置 配置密钥与地址）；联网开启时本地无果可联网兜底，答案标注来源。<br>
+      <b>🤖 智能分析</b>：智能查询/智能问询/智能更新/纠错/对话，均基于已接入的分析引擎（设置→智能分析设置 配置密钥与地址）；联网开启时本地无果可联网兜底，答案标注来源。<br>
       <hr style="border:none;border-top:1px dashed var(--line);margin:10px 0">
       <b>🔎 知识库增强（v2.4.8）</b>：<b>模糊检索</b>错字 / 缺字 / 语序不同也能命中（结果带相关度百分比）；<b>提示词生成</b>把「问题 + 知识库最相关片段 + 长期记忆」自动拼成完整提示词，可复制自用或直接投喂大模型；<b>存疑与反向查询</b>可对任一条目打标并反查知识库辅助核实；设置新增「<b>通过 GitHub 升级</b>」（内部版查 *-internal-4060、公开版查 *-public-4060，与网盘双通道隔离一致）。<br>
       <b>🔐 启动口令保护（内部版，v2.4.9）</b>：首次启动校验启动口令，支持「记住本机 / 修改口令 / 忘记口令」；忘记口令时请联系软件开发者或管理员协助重置（出厂口令见交付说明）。公开版与古建为单通道发布，无启动口令。<br>
@@ -3150,7 +3177,7 @@ function popupHtml(r) {
     "筛选多命中圈选三端统一：绿色虚线最小包围圆（Ritter 算法，刚好圈住+视野刚好完整显示），单命中直接定位", 
 "长按菜单收藏补振动反馈（navigator.vibrate）"]],
     ["v2.4.1", "2026-08-30", ["筛选菜单：关键词历史区块上移到管理所上方（与查询词上下衔接更顺）", "\u5feb\u6377\u5e38\u7528 vs \u539f\u5b50\u83dc\u5355\u89c6\u89c9\u533a\u5206\uff1a\u2b50\u524d\u7f00 + \u91d1\u8fb9\u5de6 border + \u6d45\u91d1\u5fae\u67d3\u8272\u80cc\u666f\uff08\u7528\u6237\u4e00\u773c\u80fd\u5206\u8fa8\u300c\u5feb\u6377\u5e38\u7528\u300d\uff0c\u4e0d\u518d\u8bef\u4ee5\u4e3a\u662f\u6253\u5f00\u5b50\u83dc\u5355\uff09", "\u5468\u8fb9\u641c\u7d22\u5efa\u7b51\u7269\u7c7b\u578b\u4feebug\uff1a\u9009\u9879\u70b9\u51fb\u5207\u6362\u5b9e\u65f6\u663e\u793a\u300c\u5df2\u9009 N \u4e2a\u7c7b\u578b\u300d\u8ba1\u6570\u3001\u7a7a\u65f6\u5168\u9009\u751f\u6548\uff0c\u53bb\u9664\u4e0d\u54cd\u5e94\u611f", "\u673a\u6784\u9ed8\u8ba4\u7ba1\u7406\u6240\u652f\u6301\u591a\u4e2a\uff1a\u8bbe\u7f6e \u2192 \u673a\u6784\u5c42\u7ea7\u9ed8\u8ba4\u503c\uff0c\u539f\u300c\u9ed8\u8ba4\u6240\u300d\u6539\u4e3a\u591a\u9009 chips\uff08\u4e00\u952e\u591a\u9009\u591a\u4e2a\u9ed8\u8ba4\u6240\uff09\uff0c\u65b0\u589e\u5efa\u7b51\u7269\u9884\u586b\u7b2c 1 \u4e2a\uff1b\u5176\u4f59\u5c42\u7ea7\u5355\u503c", "\u7ba1\u7406\u6bb5\u9ed8\u8ba4\u7a7a + \u6bb5/\u6240\u4e24\u4e2a\u72ec\u7acb\u9009\u9879\uff1a\u6bb5\u5b57\u6bb5\u52a0\u300c\u53ef\u7559\u7a7a\u300d\u63d0\u793a\uff0c\u4e0b\u62c9\u4e0e\u6240\u5b57\u6bb5\u4e92\u4e0d\u7ed1\u5b9a\uff0c\u6bb5\u540d\u4e0d\u5fc5\u968f\u5de6\u6240\u540d", "zip \u540d\u79f0\u5f39\u6027\u5c42\u6b21\u5339\u914d\uff1amatchOrgScope \u4e0d\u518d\u56fa\u5b9a\u6309 office\u2192station\u2192section\u2192mgmt\u2192bureau \u987a\u5e8f\uff0c\u6539\u6309\u6700\u957f\u6700\u5177\u4f53\u7c7b\u522b\u4f18\u5148 + \u957f\u5ea6\u52a0\u6743\uff08\u5982 \u53f2\u5c71.zip \u2192 \u81ea\u52a8\u9501\u5b9a\u53f2\u5c71\u6240\uff1b\u4eac\u5bc6\u5f15\u6c34\u7ba1\u7406\u5904.zip \u2192 \u4f18\u5148\u5339\u914d\u7ba1\u7406\u5904\u4e0b\u5c5e\u5355\u4f4d\uff09", "AI \u667a\u80fd\u67e5\u8be2\u8f93\u5165\u6846\u793a\u4f8b+\u5360\u4f4d\u7b26\u66f4\u53cb\u597d\uff1apickRecord \u589e\u52a0\u300c\u8bd5\u8bd5\u641c\u300d5 \u679a\u6761\u76ee\u7684\u5feb\u6377 chip\uff08\u8d34\u8fd1\u9886\u57df\uff1a\u6c34\u5229/\u611f\u77e5/\u53e4\u5efa \u5404\u6709\u9886\u57df\u793a\u4f8b\uff09\uff0c\u4e0d\u518d\u7528\u5360\u4f4d\u7b26\u6697\u85cf\u771f\u5b9e\u6761\u76ee\u540d\uff08\u907f\u514d\u5728\u67e5\u8be2\u9762\u677f\u51fa\u73b0\u4e0e\u573a\u666f\u4e0d\u7b26\u7684\u67e5\u8be2\u4f8b\uff09", "\u611f\u77e5/\u53e4\u5efa\u540c\u6b65\u65b0\u589e\uff1a\u76f8\u540c ANR/perf \u4fee\u590d + \u5360\u4f4d\u7b26\u53cb\u597d\u5316 + pickRecord \u79cd\u5b50\u82af\u7247", "\u4e09\u7aef\u56db\u5e73\u53f0\u540c\u6b65\u66f4\u65b0\uff08Win/UOS/Android/PWA\uff09\uff0c\u65b0\u914d\u7f6e\u952e shuili_orgcfg_v2 \u5df2\u5305\u542b officeDefaults \u6570\u7ec4\u8fc1\u79fb"]],
-    ["v2.4.0", "2026-08-28", ["\u7ec4\u7ec7\u4e94\u7ea7\u5316：建筑物组织层级扩为 局/管理处/所/站/段（默认：水利工程管理中心 / 京密引水管理处 / 水库所），添加建筑物表单、筛选、导入导出全链路同步；新配置键 shuili_orgcfg_v2 自动迁移旧数据", "设置新增三项管理：①机构层级与默认名称管理（增删改 局/管理处/所/站/段 + 默认值编辑，重命名级联同步到所有建筑物与「💾 保存并全量同步」按钮）②建筑物类型管理（数据派生类型改名级联/自定义类型可删/新增）③快捷常用设置", "导出文件名与文件夹层次可选项：导出照片支持文件名组合段（局/管理处/所/站/段/建筑物名，默认 所+名，`_` 连接）与文件夹层次组合段（默认 管理所/），安卓端多级目录导出原生支持；压缩包名按组合段命名", "zip 三级匹配导入：压缩包文件名 → zip 内文件夹 → 照片文件名；zip 名命中机构（所→站→段→管理处→局，如 史山.zip → 优先在史山所范围内匹配）后整包收窄匹配范围；安卓原生桥接 zip 文件名", "新增「快捷常用」主菜单：置于查询/筛选之下首位，右键/长按任意菜单项快速添加，或到设置勾选；原子菜单全部保留", "菜单调序：查询 筛选 快捷常用 地图与位置 数据管理 传输与共享 运行维护 智能AI 设置 信息帮助；「大模型 AI 设置」并入智能AI组、「关于/帮助」并入信息与帮助组（功能全保留）", "修复文件夹上下文管理所匹配 bug：DIMS.offices 为规范化名（温泉所），旧代码用 r.office 原文比对（温泉管理所）导致范围限定失效，改为规范化比对"]],
+    ["v2.4.0", "2026-08-28", ["\u7ec4\u7ec7\u4e94\u7ea7\u5316：建筑物组织层级扩为 局/管理处/所/站/段（默认：水利工程管理中心 / 京密引水管理处 / 水库所），添加建筑物表单、筛选、导入导出全链路同步；新配置键 shuili_orgcfg_v2 自动迁移旧数据", "设置新增三项管理：①机构层级与默认名称管理（增删改 局/管理处/所/站/段 + 默认值编辑，重命名级联同步到所有建筑物与「💾 保存并全量同步」按钮）②建筑物类型管理（数据派生类型改名级联/自定义类型可删/新增）③快捷常用设置", "导出文件名与文件夹层次可选项：导出照片支持文件名组合段（局/管理处/所/站/段/建筑物名，默认 所+名，`_` 连接）与文件夹层次组合段（默认 管理所/），安卓端多级目录导出原生支持；压缩包名按组合段命名", "zip 三级匹配导入：压缩包文件名 → zip 内文件夹 → 照片文件名；zip 名命中机构（所→站→段→管理处→局，如 史山.zip → 优先在史山所范围内匹配）后整包收窄匹配范围；安卓原生桥接 zip 文件名", "新增「快捷常用」主菜单：置于查询/筛选之下首位，右键/长按任意菜单项快速添加，或到设置勾选；原子菜单全部保留", "菜单调序：查询 筛选 快捷常用 地图与位置 数据管理 传输与共享 运行维护 智能AI 设置 信息帮助；「智能分析设置」并入智能AI组、「关于/帮助」并入信息与帮助组（功能全保留）", "修复文件夹上下文管理所匹配 bug：DIMS.offices 为规范化名（温泉所），旧代码用 r.office 原文比对（温泉管理所）导致范围限定失效，改为规范化比对"]],
     ["v2.3.0", "2026-08-29", ["本地优先·AI 与知识库高度融合：智能查询答案自动标注来源——本地知识库命中标「📖 本地知识库已参考」，联网兜底标「🌐 联网」，离线纯本地标「📖 本地」；发行版预内置知识库骨架，首次启动离线即时导入，无网环境开箱即用", "新增「知识库查询」菜单：对话式检索本地知识库（不依赖联网 AI），命中片段按相关度排序展示", "AI 智能更新可人工把关：生成的简介与参数表在应用前可逐项编辑修正，改动高亮对比，确认后才写入", "管理所/管理站在线维护：筛选弹窗新增 ⚙️ 维护入口，支持增改删机构与站、改名全链路联动；「管理站」录入由手输改为下拉选择", "周边搜索按类型筛选：周边 N 米内可勾选建筑物类型，只看关心的类型", "导出文件名自定义：建筑物信息与照片导出均可自定义文件名（留空按机构命名）", "关键词历史：筛选弹窗收纳最近搜索关键词，点击即用、可清空", "修复筛选弹窗「照片」分组点击异常"]],
     ["v2.2.1", "2026-08-23", ["新增「退出当前页面」常驻按钮（约束5）：顶栏✕按钮调用 APP.back() 逐级关闭弹窗>抽屉>测距>列表，无物理返回键的 Win/统信/苹果端也能随时退出当前页面；并增强 back() 主页兜底（已在主页则点✕关闭抽屉/提示三击空白唤主菜单），与既有三击空白弹主菜单并存", "四端同步（2026-08-23）：将含 P5（运行维护/旅游打卡/智能分析）+ 退出按钮的最新前端同步至 Win11(exe·msi)、统信UOS龙芯(mips64el deb)、苹果PWA(静态源)；统信端纠正架构——龙芯3A4000为 mips64el，弃用此前误打的 amd64 deb，改用浏览器壳方案打 mips64el deb（Electron 无 mips 二进制），功能与其余端一致且离线可用", "四端功能对照表产出（约束3）：逐能力列出安卓/Win/统信/苹果差异，不强行一致"]],
     ["v2.2", "2026-08-21", ["照片导出「没有可导出照片」根因修复：UOS/Web/PWA/Win 上报此错的根因是导入未成功（照片数据从未落库），不再是代码路径缺漏；0 照片时弹出可操作指引，指向「从安卓复制照片」目录流式导入 / 批量导入照片 / 从安卓平台导出照片，杜绝只报一句「没有照片」", "导出照片覆盖提示（问题③之三）：本地文件夹导出（安卓 exportFilesToTree）在目标文件夹已有同名照片文件时，先弹「目标文件夹已有同名照片 → 覆盖导出 / 取消」，不再静默覆盖", "删除 6 张孤立内置样张（images/pic_20260609_*.jpg）：这些图未嵌入任何记录、在安卓端显示×且其他平台无法显示，已清理避免误导", "四平台能力复核：逐模块核对安卓/苹果PWA/统信UOS/Win11 功能一致性，确认收藏窗口、从安卓复制照片、照片目录说明、四端功能对照单等在四端均可用；安卓能做的功能其余平台均可做（目录流式导入兜底 UOS 8G 内存）", "清理临时编译产物：images/ 下不再残留无关文件，APK 打包同步排除"]],
@@ -3629,6 +3656,7 @@ function popupHtml(r) {
     el("mcFav").onclick = saveFavWindow;
     el("mcFavGo").onclick = goFavWindow;
     el("btnFilter").onclick = openFilter; // 顶栏筛选按钮（与查询并列置顶）
+    el("btnAI").onclick = () => { if (window.AI) AI.openFreeQuery((el("search") ? el("search").value : "").trim()); else toast("AI 未初始化"); }; // 顶栏智能推荐（需求二/八：点击才弹内容，不遮挡地图控件）
     el("modalClose").onclick = closeModal;
     el("modalMask").onclick = closeModal;
     el("fbClear").onclick = clearFilter; // 筛选状态条：一键清除
@@ -3672,7 +3700,7 @@ function popupHtml(r) {
   function bindMenuBtn(b) {
     b.onclick = () => {
       const act = b.dataset.act; closeDrawer();
-      // 大模型 AI 领域配置（水利：内部建筑物台账，大模型上无公开数据）
+      // 智能分析领域配置（水利：内部建筑物台账，公开模型无对应数据）
       AI.domain = {
         appName: "水利工程一张图",
         internal: true,
@@ -3705,13 +3733,18 @@ function popupHtml(r) {
           records.forEach((r) => { [r.office, r.station, r.name, r.btype].forEach((v) => { if (v && text.indexOf(String(v)) >= 0) set.add(String(v)); }); });
           return [...set].slice(0, 10);
         },
-        // #8 双击 followup 关键词 → 填入查询框并立即检索
+        // #8 双击 followup 关键词 → 追加到查询框并立即检索（需求三：叠加而非替换原条件，如「节制闸」+「西田各庄所」）
         runSearch: (kw) => {
-          const s = el("search"); if (s) s.value = kw || "";
-          if (typeof filter !== "undefined") filter.q = (kw || "").trim();
+          kw = (kw || "").trim();
+          if (!kw) return;
+          const cur = (filter.q || "").trim();
+          const toks = cur ? cur.split(/\s+/) : [];
+          if (!toks.includes(kw)) toks.push(kw);   // 去重追加，避免重复条件
+          filter.q = toks.join(" ");
+          const s = el("search"); if (s) s.value = filter.q;
           if (typeof render === "function") render();
           closeModal();
-          toast("已在查询框填入：" + (kw || ""));
+          toast("已加入查询条件：" + kw);
         },
         queryPrompt: (r) => `这是水利工程内部台账中的建筑物「${r.name}」，管理所：${r.office || ""}，管理段：${r.station || ""}，类型：${r.btype || ""}。已知参数：${JSON.stringify(r.params || {})}${r.description ? "；描述：" + r.description : ""}。请基于这些信息做结构化梳理与合理性校验（如参数单位、数值范围、命名规范），指出可能错漏，不要编造公开网络数据。`,
         updatePrompt: (r) => `水利工程内部台账建筑物：${JSON.stringify({ name: r.name, office: r.office, station: r.station, btype: r.btype, params: r.params || {}, description: r.description || "" })}。请仅依据已有字段对缺失项做合理补全建议、对错漏项做校验。返回 JSON：{"params":{"键":"值"},"description":"一句话描述","changes":["变更说明"]}。只返回 JSON。`
@@ -4162,6 +4195,7 @@ function popupHtml(r) {
       const name = (el("favName").value || def).trim() || def;
       const entry = { id: "w" + Date.now().toString(36), name, bounds, center, zoom };
       setFavs(favs.concat([entry]));
+      lastWindowId = entry.id; saveUI();   // 需求一：记住本次收藏为「上次窗口」
       closeModal();
       toast("已收藏窗口：" + name + "（点 📍 返回）");
     };
@@ -4173,13 +4207,42 @@ function popupHtml(r) {
       if (s.fav && s.fav.lat != null) { return flyToFav({ center: [s.fav.lat, s.fav.lng], zoom: s.fav.zoom }); } // 兼容旧版单点收藏
       return toast("尚未收藏窗口，请先点 ⭐ 收藏当前窗口");
     }
-    if (favs.length === 1) { flyToFav(favs[0]); return toast("已返回收藏窗口：" + favs[0].name); }
-    const html = favs.map((f, i) => `<div class="fav-item" data-i="${i}"><span class="fi-ico">🪟</span><span class="fi-name">${esc(f.name)}</span><span class="fi-meta">缩放 ${f.zoom}</span></div>`).join("");
-    openModal("返回收藏窗口", `<div class="hint">选择一个窗口返回（按记录范围 + 缩放居中）：</div><div class="filelist">${html}</div>`, `<button class="btn ghost" id="favClose">关闭</button>`);
+    if (favs.length === 1) {
+      lastWindowId = favs[0].id; saveUI();   // 需求一：记住本次返回为「上次窗口」
+      flyToFav(favs[0]); return toast("已返回收藏窗口：" + favs[0].name);
+    }
+    const html = favs.map((f, i) => `<div class="fav-item" data-i="${i}"><span class="fi-ico">🪟</span><span class="fi-name">${esc(f.name)}</span><span class="fi-meta">缩放 ${f.zoom}</span><button class="fi-rename" data-i="${i}" title="改名">✎</button></div>`).join("");
+    openModal("返回收藏窗口", `<div class="hint">选择一个窗口返回（按记录范围 + 缩放居中）；✎ 可改名。</div><div class="filelist">${html}</div>`, `<button class="btn ghost" id="favClose">关闭</button>`);
     el("favClose").onclick = closeModal;
     document.querySelectorAll(".fav-item").forEach((it) => {
-      it.onclick = () => { const i = +it.dataset.i; closeModal(); flyToFav(favs[i]); toast("已返回收藏窗口：" + favs[i].name); };
+      it.onclick = (e) => {
+        if (e.target.classList.contains("fi-rename")) { e.stopPropagation(); renameFavWindow(+it.dataset.i); return; }
+        const i = +it.dataset.i; lastWindowId = favs[i].id; saveUI();
+        closeModal(); flyToFav(favs[i]); toast("已返回收藏窗口：" + favs[i].name);
+      };
     });
+  }
+  // 改名收藏窗口（需求四：保存时可命名、返回列表可改名）
+  function renameFavWindow(i) {
+    const favs = getFavs(); const f = favs[i]; if (!f) return;
+    openModal("改名收藏窗口",
+      `<div class="field"><label>窗口名称</label><input id="favRename" class="inp" value="${esc(f.name)}" placeholder="如：温泉所建筑物窗口"></div>`,
+      `<button class="btn ghost" id="frCancel">取消</button><button class="btn primary" id="frOk">保存</button>`);
+    el("frCancel").onclick = closeModal;
+    el("frOk").onclick = () => {
+      const nm = (el("favRename").value || "").trim(); if (!nm) return toast("名称不能为空");
+      favs[i] = Object.assign({}, f, { name: nm }); setFavs(favs);
+      closeModal(); goFavWindow(); toast("已改名：" + nm);
+    };
+  }
+  // 启动恢复「上次窗口」（需求一：下次进入为最后一次返回的窗口视图）
+  function restoreLastWindow() {
+    if (lastWindowId) {
+      const f = getFavs().find((x) => x.id === lastWindowId);
+      if (f) { flyToFav(f); return; }
+    }
+    if (lastCenter) map.setView([lastCenter.lat, lastCenter.lng], lastCenter.zoom);
+    else fitToShown();
   }
   function openSync() {
     const html = `<div class="hint">把当前「我的改动」备份为文件，或导入他人/他机的改动。</div>`;
@@ -4416,8 +4479,8 @@ function popupHtml(r) {
     bar.appendChild(btn);
   }
 
-  // ================= 知识库（KB）集成 · 需求③ =================
-  // 让 AI 融入应用：KB 承载建筑物骨架 + 操作日志 + Hermes 自我学习记忆。
+  // ================= 知识库（KB）集成 =================
+  // 让智能分析融入应用：KB 承载建筑物骨架 + 操作日志 + Hermes 自我学习记忆。
   // 所有钩子对 KB 缺失/异常均优雅降级，不影响主流程。
   function kbReady() { return !!(window.KB && KB.all); }
   function kbLog(desc, params) { if (kbReady()) { try { KB.logOp(desc, params); } catch (e) {} } }
@@ -4625,7 +4688,7 @@ function popupHtml(r) {
     };
   }
 
-  // 供 ai.js 注入 KB 上下文（让模型可读知识库）+ Hermes 学习钩子（v2.4.6：切片级智能检索，段落更精准）
+  // 供智能分析引擎注入 KB 上下文（让分析引擎可读知识库）+ 长期记忆钩子（v2.4.6：切片级语义检索，段落更精准）
   window.__kbContext = async (q) => {
     if (!kbReady()) return "";
     try {
@@ -4824,7 +4887,7 @@ function popupHtml(r) {
   // ---------- 启动 ----------
   window.APP = { showAllParams, edit: openEdit, shareBuilding,   /* v2.4.3 修复：气泡「分享」按钮 onclick=\"APP.shareBuilding()\" 长期未导出 → 点击即 script error */ del, openPhoto, viewPhotos: openPhotoCycle, navigate, nearCenter, close: closeModal, back,
     receivePhoto, receiveSheet, receiveDone, receiveError, receiveCancel, onExportResult };
-  // v2.4.3：暴露 ai.js 依赖的全局 helper（三端保持一致）。
+  // v2.4.3：暴露智能分析引擎依赖的全局 helper（三端保持一致）。
   // 否则 AI 智能查询/更新/纠错/对话/历史等菜单调用 openModal/el/toast 会抛 ReferenceError → 表现为 script error
   window.el = el;
   window.__getRecords = function () { return records; };  // v2.4.3：journal.js 绑定建筑物/设备列表用
@@ -4859,8 +4922,7 @@ function popupHtml(r) {
     updateLayerBtn();
     render();
     initKB();
-    if (lastCenter) map.setView([lastCenter.lat, lastCenter.lng], lastCenter.zoom);
-    else fitToShown();
+    restoreLastWindow();   // 需求一：优先恢复上次返回的收藏窗口，否则恢复中心/适配全部
   }).catch((e) => toast("加载失败：" + e.message));
   if ("serviceWorker" in navigator && location.protocol.startsWith("http"))
     navigator.serviceWorker.register("sw.js").catch(() => {});
