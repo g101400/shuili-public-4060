@@ -1,16 +1,17 @@
-/* ai.js —— 通用智能分析引擎（三端复用：古建/水利/感知）
- * 不依赖任何框架，仅用浏览器 fetch + 全局 helpers（el/openModal/closeModal/toast/esc/busy/Store）。
+/* =====================================================================
+ * ai.js — 通用智能分析引擎（v2.5.0，2026-09-15）
+ * 作者：水利工程一张图开发组
+ * 功能：多模型管理与自适应调用（查询 / 更新 / 纠错 / 对话 / 知识库上下文注入）。
+ * 不依赖任何框架，仅用浏览器原生 fetch 与全局 helper
+ *       （el / openModal / closeModal / toast / esc / busy / Store）。
  * 领域差异由各 App 在加载后设置 window.AI.domain 适配（见 app.js）。
- *
- * 能力：
- *  设置：自定义模型(名称/引用地址/协议 openai 兼容/模型ID/本地模型开关)、默认模型、自动调用策略(单模型/失败回退/轮询切换)
- *  智能：查询 / 更新(写回 delta.updated) / 纠错(标注，不改原值) / 对话助手
- */
+ * ===================================================================== */
 (function (global) {
   const LS_KEY = "ai_settings_v1";
 
-  // 默认密钥从独立配置文件 ai_config.js 读取（window.SHUILI_AI_CONFIG.openrouterKey）。
-  // 仅用于本地 App 调用；如对外分发请改为空字符串让用户自行填写，并建议到 openrouter.ai 重置该密钥。
+  // 默认密钥从独立配置文件 ai_config.js 读取（window.SHUILI_AI_CONFIG.openrouterKey），
+  // 不在此处硬编码，便于按部署环境注入，亦避免随源码包外流。
+  // 对外分发时请将该值留空，由使用者在「智能分析设置」中自行填写。
   const DEFAULT_OR_KEY = (window.SHUILI_AI_CONFIG && window.SHUILI_AI_CONFIG.openrouterKey) || "";
 
   // ---------- 设置持久化 ----------
@@ -26,6 +27,7 @@
         { id: "local_ollama", name: "本地 Ollama", baseUrl: "http://localhost:11434/v1", protocol: "openai", apiKey: "ollama", modelId: "llama3", local: true }
       ],
       defaultModel: "mx_m27",
+      localFirst: true,   // 🅳 D1 本地优先路由（默认开启）
       strategy: { mode: "fallback", order: ["mx_m27", "glm52", "mx_m3", "local_ollama"], last: 0 }
     };
   }
@@ -63,6 +65,7 @@
       model: m.modelId || "",
       messages: [
         ...(opts.system ? [{ role: "system", content: opts.system }] : []),
+        ...((opts.history && opts.history.length) ? opts.history.map(function (h) { return { role: h.role || "user", content: h.content || "" }; }) : []),
         { role: "user", content: prompt }
       ],
       temperature: opts.temperature != null ? opts.temperature : 0.3,
@@ -107,20 +110,36 @@
   // ---------- 自动调用策略 ----------
   function resolveOrder(s) {
     if (s.strategy.mode === "single") return [s.defaultModel].filter(Boolean);
-    if (s.strategy.mode === "fallback") return (s.strategy.order && s.strategy.order.length) ? s.strategy.order : [s.defaultModel];
+    let base = (s.strategy.order && s.strategy.order.length) ? s.strategy.order : [s.defaultModel];
+    if (s.localFirst) {
+      // 🅳 D1 本地优先路由：弱网/离线时把本地模型(同机/局域网)排到最前，先本地后云端
+      const isLocal = (id) => { const mm = s.models.find((x) => x.id === id); return !!(mm && mm.local); };
+      base = base.slice().sort((a, b) => (isLocal(b) ? 1 : 0) - (isLocal(a) ? 1 : 0));
+    }
+    if (s.strategy.mode === "fallback") return base;
     if (s.strategy.mode === "roundrobin") {
-      const base = (s.strategy.order && s.strategy.order.length) ? s.strategy.order : [s.defaultModel];
       let idx = (typeof s.strategy.last === "number") ? s.strategy.last : 0;
       if (idx >= base.length || idx < 0) idx = 0;
       const rotated = base.slice(idx).concat(base.slice(0, idx));
       s.strategy.last = (idx + 1) % base.length;
       return rotated;
     }
-    return [s.defaultModel];
+    return base;
   }
 
+  // 🅳 D2 分析结果缓存：相同提示词+选项+模型顺序命中本地缓存，省词元/提速（弱网尤其明显），上限 LRU 淘汰
+  const _AI_CACHE_KEY = "ai_cache_v1", _AI_CACHE_MAX = 200;
+  const _aiCache = (function () {
+    let m = {};
+    try { m = JSON.parse(localStorage.getItem(_AI_CACHE_KEY) || "{}") || {}; } catch (e) {}
+    return {
+      get(k) { return Object.prototype.hasOwnProperty.call(m, k) ? m[k] : null; },
+      set(k, v) { m[k] = v; const ks = Object.keys(m); if (ks.length > _AI_CACHE_MAX) delete m[ks[0]]; try { localStorage.setItem(_AI_CACHE_KEY, JSON.stringify(m)); } catch (e) {} }
+    };
+  })();
+
   async function strategyCall(prompt, opts) {
-    // v2.4.6 智能分析框架：注入本地知识库上下文 + Hermes 自我学习记忆（无则优雅降级）
+    // v2.4.6 智能分析框架：注入本地知识库上下文与长期记忆（无则优雅降级）
     const kbc = (window.__kbContext && typeof window.__kbContext === "function") ? await window.__kbContext(prompt) : "";
     const memc = (window.__kbMemoryContext && typeof window.__kbMemoryContext === "function") ? await window.__kbMemoryContext() : "";
     let fullPrompt = prompt;
@@ -129,6 +148,9 @@
     window.__lastPrompt = fullPrompt;   // v2.4.8：供「查看提示词」回显
     const s = loadSettings();
     const order = resolveOrder(s);
+    const cacheKey = JSON.stringify({ p: fullPrompt, o: { s: (opts && opts.system) || "", j: !!(opts && opts.json), mt: (opts && opts.maxTokens) || 0 }, ord: order.join("|"), h: (opts && opts.history && opts.history.length) ? opts.history.map(function (x) { return x.role + ":" + (x.content || "").length; }).join(",") : "" });
+    const cached = _aiCache.get(cacheKey);
+    if (cached != null) return cached;
     let lastErr;
     for (const id of order) {
       const m = s.models.find((x) => x.id === id) || s.models.find((x) => x.id === s.defaultModel);
@@ -136,6 +158,7 @@
       try {
         const r = await callOne(m, fullPrompt, opts);
         saveSettings(s);
+        _aiCache.set(cacheKey, r);
         return r;
       } catch (e) {
         lastErr = e;
@@ -279,7 +302,7 @@
   function kbShowPrompt() {
     const p = window.__lastPrompt || "";
     openModal("本次提示词（已注入知识库）",
-      '<div class="hint">下面是本次实际发送给大模型的完整提示词（含知识库片段与长期记忆），可复制后自行投喂其他模型。</div>' +
+      '<div class="hint">下面是本次实际发送给分析引擎的完整提示词（含知识库片段与长期记忆），可复制后自行投喂其他模型。</div>' +
       '<textarea id="kbtP" class="inp" rows="14" style="width:100%">' + esc2(p) + '</textarea>',
       '<button class="btn ghost" id="kbtClose">关闭</button><button class="btn primary" id="kbtCopy">复制提示词</button>');
     el("kbtClose").onclick = closeModal;
@@ -289,15 +312,43 @@
     };
   }
 
+  // ---------- 🅳 D4 提示词模板化 + D5 多轮会话 基础设施 ----------
+  const CUSTOM_SYS_KEY = "ai_custom_system_v1";
+  function getUserCustomSystem() {
+    try { const v = (localStorage.getItem(CUSTOM_SYS_KEY) || "").trim(); return v || ""; } catch (e) { return ""; }
+  }
+  // 系统提示词从 ai_prompts.js 模板读取，支持用户自定义角色覆盖；模板缺失时回退默认值，绝不崩溃
+  function getPrompt(scene, dm, online) {
+    const cus = getUserCustomSystem();
+    if (cus) return cus;
+    const key = (dm && dm.internal) ? "internal" : "heritage";
+    const dom = (window.SHUILI_AI_PROMPTS && window.SHUILI_AI_PROMPTS.domain && window.SHUILI_AI_PROMPTS.domain[key]) || null;
+    if (dom) {
+      let p = dom[scene];
+      if (p && typeof p === "object") p = online ? (p.online || p.local) : (p.local || p.online);
+      if (typeof p === "string" && p) {
+        const appName = (dm && dm.appName) ? dm.appName : "本应用";
+        return p.replace(/__APP__/g, appName);
+      }
+    }
+    return (window.SHUILI_AI_PROMPTS && window.SHUILI_AI_PROMPTS.fallback) || "你是智能分析助手。";
+  }
+  // 🅳 D5 多轮会话：维护最近 N 轮短期上下文（与 Hermes 长期记忆区分），注入模型调用
+  const _SESSION_MAX = 8;
+  let _sessionTurns = [];
+  function pushSession(role, content) {
+    if (!content) return;
+    _sessionTurns.push({ role: role, content: String(content).slice(0, 1200) });
+    const cap = _SESSION_MAX * 2;
+    if (_sessionTurns.length > cap) _sessionTurns.splice(0, _sessionTurns.length - cap);
+  }
+  function sessionMessages() { return _sessionTurns.map(function (t) { return { role: t.role, content: t.content }; }); }
+  function clearSession() { _sessionTurns = []; }
+
   // ---------- 智能查询 ----------
   // v2.4.6：联网在线查询开关（仅内部台账域 水利/感知 显示，默认本地查询）
   const ONLINE_KEY = "ai_online_v1";
-  function querySysPrompt(dm, online) {
-    if (!dm.internal) return "你是古建文化知识助手，回答准确、专业、简明。";
-    return online
-      ? "你是内部台账分析助手，可结合公开网络资料辅助分析。可引用公开信息，但须明确区分『本地台账数据』与『公开网络信息』，标注数据来源与时效；对无法确认的内容标注存疑。"
-      : "你是内部台账分析助手。仅基于用户提供的本地数据作答，不要编造公开网络信息。";
-  }
+  // 系统提示词改为从 ai_prompts.js 模板读取（见 getPrompt，🅳 D4）
   function modeBarHtml(dm, online) {
     if (!dm.internal) return "";
     return `<div class="ai-mode" style="padding:8px 10px;margin-bottom:10px;background:#f3f6fb;border-radius:8px;font-size:13px">
@@ -386,7 +437,7 @@
       el("aiOut").innerHTML = '<div class="hint">正在调用分析引擎查询，请稍候…</div>';
       const box = document.getElementById("aiActions"); if (box) box.innerHTML = "";
       try {
-        const txt = await strategyCall(prompt, { system: querySysPrompt(dm, online) });
+        const txt = await strategyCall(prompt, { system: getPrompt("query", dm, online) });
         const localHit = !!window.__kbLocalHit;
         let badge = "";
         if (localHit) badge += '<div class="src-badge">[本地知识库已参考]</div>';
@@ -441,7 +492,7 @@
   }
 
   // ---------- 智能问询（#7）：自由提问机构级 / 汇总类问题，注入本地机构层级统计 ----------
-  async function openFreeQuery(dm) {
+  async function openFreeQuery(dm, prefill) {
     dm = dm || AI.domain;
     if (!dm) return toast("AI 未初始化");
     openModal("智能问询 · " + (dm.appName || "台账"),
@@ -450,6 +501,7 @@
        <div id="aiFQOut" class="ai-out"></div><div id="aiFQActions" class="ai-actions"></div><div id="aiFQFollowups" class="ai-followups"></div>`,
       `<button class="btn ghost" id="aiFQClose">关闭</button><button class="btn primary" id="aiFQSend">问询</button>`);
     el("aiFQClose").onclick = closeModal;
+    if (prefill) { const ta = el("aiFQIn"); if (ta) ta.value = prefill; }   // 需求二/八：顶栏智能推荐带入当前查询词
     const send = async () => {
       const q = (el("aiFQIn") ? el("aiFQIn").value : "").trim();
       if (!q) { toast("请输入问题"); return; }
@@ -457,18 +509,19 @@
       const actBox = document.getElementById("aiFQActions"); if (actBox) actBox.innerHTML = "";
       try {
         const ctx = (dm.orgContext && typeof dm.orgContext === "function") ? dm.orgContext(q) : "";
-        const sys = dm.internal
-          ? "你是水利工程内部台账智能问询助手。下面提供了本地台账的机构层级与统计信息（这是权威数据，请严格基于它作答，不要编造；无法从数据得出的内容请明确说明『无足够数据』。回答简明、用中文。"
-          : "你是古建知识助手，基于你掌握的资料与本地知识库作答，简明、专业。";
+        const sys = getPrompt("free", dm, false);
         const prompt = ctx ? ("【本地台账统计信息】\n" + ctx + "\n\n---\n\n用户问题：" + q) : q;
-        const txt = await strategyCall(prompt, { system: sys, maxTokens: 1400 });
+        const txt = await strategyCall(prompt, { system: sys, maxTokens: 1400, history: sessionMessages() });
+        pushSession("user", prompt); pushSession("assistant", txt);
         el("aiFQOut").innerHTML = mdLite(txt);
         let h = '<button class="btn ghost" id="aiFQCopy">复制结果</button>';
         if (window.KB) h += '<button class="btn primary" id="aiFQSaveKB">保存到知识库</button>';
+        h += '<button class="btn ghost" id="aiFQClearCtx">清空上下文</button>';
         if (actBox) {
           actBox.innerHTML = h;
           const cp = document.getElementById("aiFQCopy"); if (cp) cp.onclick = () => { try { if (navigator.clipboard) navigator.clipboard.writeText(txt); } catch (e) {} toast("已复制"); };
           const sk = document.getElementById("aiFQSaveKB"); if (sk) sk.onclick = () => saveQueryToKB(q, txt, dm, false);
+          const cx = document.getElementById("aiFQClearCtx"); if (cx) cx.onclick = () => { clearSession(); toast("已清空对话上下文"); };
         }
         renderFollowups(txt, "aiFQFollowups");
         pushHistory({ q, recId: "", recName: "智能问询：" + q.slice(0, 30), online: false, time: Date.now(), answer: txt });
@@ -487,9 +540,7 @@
       `<div class="hint">分析引擎将基于已知信息补全/校正该条目，请人工复核后应用（仅写入本地改动，可随时重置）。</div><div id="aiUpd"></div>`,
       `<button class="btn ghost" id="aiUpdClose">关闭</button><button class="btn primary" id="aiUpdApply" disabled>应用更新</button>`);
     el("aiUpdClose").onclick = closeModal;
-    const sys = dm.internal
-      ? '你是水利工程内部台账助手。仅依据用户提供的本地台账字段，对缺失项做合理补全建议、对错漏项做校验提示。严禁编造公开网络数据。返回严格 JSON：{"params":{"键":"值"},"description":"一句话描述","changes":["变更说明"]}。只返回 JSON。'
-      : '你是古建资料助手。依据用户提供的已知条目，补充权威、准确的建筑背景与参数。返回严格 JSON：{"params":{"键":"值"},"description":"一句话描述","changes":["变更说明"]}。只返回 JSON。';
+    const sys = getPrompt("update", dm, false);
     try {
       const raw = await strategyCall(dm.updatePrompt(rec), { system: sys, json: true });
       const obj = parseJsonSafe(raw);
@@ -564,18 +615,14 @@
     };
   }
 
-  // ---------- AI 对话助手 ----------
+  // ---------- 智能对话助手 ----------
   function openChat(dm) {
     let online = localStorage.getItem(ONLINE_KEY) === "1" && dm.internal;
-    const chatSys = (on) => {
-      if (!dm.internal) return "你是" + dm.appName + "知识助手，专业、简明。";
-      return on
-        ? "你是" + dm.appName + "内部台账智能助手，可结合公开网络资料辅助回答，并标注信息来源与时效，对不确定内容标注存疑。"
-        : "你是" + dm.appName + "内部台账智能助手，基于用户提供的本地数据回答问题，不编造公开信息。";
-    };
-    openModal("AI 对话助手",
+    const chatSys = (on) => getPrompt("chat", dm, on);
+    openModal("智能对话助手",
       modeBarHtml(dm, online) +
       `<div class="ai-chat" id="aiChatLog"></div>
+       <div style="margin:8px 0 4px"><button class="btn ghost sm" id="aiChatClearCtx">清空上下文</button><span class="hint" style="margin-left:8px">连续追问将携带最近 ${_SESSION_MAX} 轮上下文</span></div>
        <div class="field" style="margin-top:10px"><textarea id="aiChatIn" class="inp" rows="3" placeholder="问点什么…（Ctrl/⌘+Enter 发送）"></textarea></div>`,
       `<button class="btn ghost" id="aiChatClose">关闭</button><button class="btn primary" id="aiChatSend">发送</button>`);
     el("aiChatClose").onclick = closeModal;
@@ -589,7 +636,8 @@
       const ai = document.createElement("div");
       ai.className = "bub ai"; ai.textContent = "思考中…"; log.appendChild(ai); log.scrollTop = log.scrollHeight;
       try {
-        const t = await strategyCall(v, { system: chatSys(online) });
+        const t = await strategyCall(v, { system: chatSys(online), history: sessionMessages() });
+        pushSession("user", v); pushSession("assistant", t);
         ai.innerHTML = mdLite(t);
         if (window.__hermesNote) window.__hermesNote("对话", (online ? "[联网] " : "[本地] ") + v + " → " + (t || "").slice(0, 120));
       } catch (e) {
@@ -604,6 +652,7 @@
       }));
     }
     el("aiChatSend").onclick = send;
+    const ccx = el("aiChatClearCtx"); if (ccx) ccx.onclick = () => { clearSession(); const lg = el("aiChatLog"); if (lg) lg.innerHTML = ""; toast("已清空对话上下文"); };
     el("aiChatIn").addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") send(); });
   }
 
@@ -647,7 +696,9 @@
            <option value="fallback" ${s.strategy.mode === "fallback" ? "selected" : ""}>失败回退（按顺序尝试下一个）</option>
            <option value="roundrobin" ${s.strategy.mode === "roundrobin" ? "selected" : ""}>轮询切换（多模型负载均衡）</option>
          </select></div>
-         <div class="field" id="aiOrderWrap" style="${s.strategy.mode === "single" ? "display:none" : ""}"><label>策略模型顺序（Ctrl/⌘ 多选）</label><select id="aiOrder" class="inp" multiple size="4">${orderOpts}</select></div>`;
+         <div class="field" id="aiOrderWrap" style="${s.strategy.mode === "single" ? "display:none" : ""}"><label>策略模型顺序（Ctrl/⌘ 多选）</label><select id="aiOrder" class="inp" multiple size="4">${orderOpts}</select></div>
+         <div class="field" style="margin-top:8px"><label>自定义系统角色（可选）</label><textarea id="aiCustomSys" class="inp" rows="3" placeholder="留空则使用内置模板；填写后将覆盖所有场景的系统提示词">${esc2(getUserCustomSystem())}</textarea><div class="hint">让分析引擎以特定身份/口吻作答；清空即恢复内置模板。</div></div>
+         <div class="field" style="margin-top:8px"><label style="cursor:pointer"><input type="checkbox" id="aiLocalFirst" ${s.localFirst ? "checked" : ""}> 🅳 本地优先路由（弱网/离线时先试本地模型，再回退云端）</label></div>`;
       openModal("智能分析设置", html,
         `<button class="btn ghost" id="aiSetCancel">取消</button><button class="btn primary" id="aiSetSave">保存</button><button class="btn ghost" id="aiSetTest">测试默认模型</button>`);
       el("aiSetCancel").onclick = closeModal;
@@ -669,6 +720,8 @@
         s.strategy.order = [].slice.call(el("aiOrder").selectedOptions).map((o) => o.value);
         if (!s.strategy.order.length) s.strategy.order = [s.defaultModel];
         s.strategy.last = 0;
+        s.localFirst = !!(el("aiLocalFirst") && el("aiLocalFirst").checked);   // 🅳 D1
+        try { localStorage.setItem(CUSTOM_SYS_KEY, (el("aiCustomSys") ? (el("aiCustomSys").value || "") : "").trim()); } catch (e) {}
         saveSettings(s);
         closeModal();
         toast("智能分析设置已保存");
@@ -686,7 +739,7 @@
     openUpdate() { if (!AI.domain) return toast("AI 未初始化"); pickRecord(AI.domain, (r) => runUpdate(AI.domain, r)); },
     openCorrect() { if (!AI.domain) return toast("AI 未初始化"); pickRecord(AI.domain, (r) => showCorrectForm(AI.domain, r)); },
     openChat() { if (!AI.domain) return toast("AI 未初始化"); openChat(AI.domain); },
-    openFreeQuery() { if (!AI.domain) return toast("AI 未初始化"); openFreeQuery(AI.domain); },
+    openFreeQuery(prefill) { if (!AI.domain) return toast("AI 未初始化"); openFreeQuery(AI.domain, prefill); },
     // 右键菜单等场景：对指定记录直接调用（不再弹选择器）
     query(rec) { if (!AI.domain) return toast("AI 未初始化"); rec ? runQuery(AI.domain, rec) : AI.openQuery(); },
     update(rec) { if (!AI.domain) return toast("AI 未初始化"); rec ? runUpdate(AI.domain, rec) : AI.openUpdate(); },
