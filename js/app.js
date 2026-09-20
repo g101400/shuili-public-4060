@@ -4918,12 +4918,12 @@ function popupHtml(r) {
   bindUI();
   loadUI();
   load().then(() => {
-    // 各步骤独立容错：任何一步抛错只提示对应步骤，不再中断后续（否则一处异常 = 整屏空白）
-    const steps = [["底图", addBasemap], ["图层按钮", updateLayerBtn], ["渲染", render], ["知识库", initKB], ["恢复窗口", restoreLastWindow]];
-    for (const [name, fn] of steps) {
-      try { fn(); } catch (e) { console.error("[init] " + name + " 失败:", e); toast("初始化[" + name + "]失败：" + e.message); }
-    }
-  }).catch((e) => { console.error("[init] load 失败:", e); toast("加载失败：" + e.message); });
+    addBasemap();
+    updateLayerBtn();
+    render();
+    initKB();
+    restoreLastWindow();   // 需求一：优先恢复上次返回的收藏窗口，否则恢复中心/适配全部
+  }).catch((e) => toast("加载失败：" + e.message));
   if ("serviceWorker" in navigator && location.protocol.startsWith("http"))
     navigator.serviceWorker.register("sw.js").catch(() => {});
   // ---------- v2.4.3 天地图密钥管理 ----------
