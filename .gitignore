@@ -1,48 +1,65 @@
-# ===== 密钥（本地真实值，绝不入库）=====
-secrets/config.local.js
-# 安卓签名 keystore（发布签名凭据，本地持有；公开库仅放路径引用）
-build/targets/keystore/
-build/targets/android/local.properties
-build/targets/*/.gradle/
+# ===== 水利工程基础信息一张图 工程级忽略规则（独立仓库，不再依赖 gujian4060 单体 .gitignore）=====
 
-# ===== 构建产物 / 安装包 =====
+# 本地密钥 / 真实配置（绝不上传）
+secrets/
+*.local.js
+*.keystore
+*.jks
+
+# 构建产物 / 包（绝不上传）
+node_modules/
+dist/
+build/tmp/
+build/output/
 *.apk
 *.aab
-*.ipa
-*.deb
 *.exe
 *.msi
+*.deb
 *.zip
+*.pdb
+*.dll
+bin/
+obj/
+publish/
+publish_v331/
+# 本机打包产物暂存（二进制，走百度网盘分发，不入库）
 releases/
-build_v24*.log
-.build_v24_ts
-.upload_tmp
-.upload_tmp.done
-dist/
-out/
-build/targets/*/node_modules/
-build/targets/*/release*/
-build/targets/*/.ecache/
-build/targets/*/.npmcache/
-build/targets/win11/jingmi_app/*
-build/targets/uos/jingmi_app/*
-build/targets/android/app/src/main/assets/www/*
-build/targets/android/app/build/
-build/targets/android/.gradle/
-build/targets/ios/*/pwa/*
+# 本地构建日志
+build/_*.log
 
-# ===== 备份 / 日志 / 临时 =====
+# 工作区 / 凭据
+.workbuddy/
+.github_token
+
+# 离线瓦片与清单（体积大，可再生成；运行需要但用本地缓存）
+offline_tiles/
+native-shell/*/webroot/offline_tiles/
+# 构建期暂存副本（真实 webroot 在顶层，禁止把冗余副本入库）
+native-shell/*/webroot/
+
+# 真实密钥文件：只保留 *.demo.js 模板
+ai_seed.js
+native-shell/*/webroot/ai_seed.js
+webroot/ai_seed.js
+
+# 历史备份目录（含旧 API 密钥副本，严禁入库）
+*_bak_*/
 *.bak
-*.bak*
-*.log
-.data.real.*
-*.apk_hold
-rel_extract*/
+*.bak_*
+__pycache__/
+*.pyc
 
-# ===== 依赖 / 工具 =====
-node_modules/
-.thumbs/
-.DS_Store
-Thumbs.db
-*.swp
-*.swo
+# iOS 历史发布包（体积大，不入库；保留构建脚本）
+native-shell/water-ios/apple-package/
+native-shell/water-ios/本地部署/
+secure_boot_cred.js
+native-shell/*/webroot/secure_boot_cred.js
+sec_crypt.js
+native-shell/*/sec_crypt.js
+# 2026-10-23：同 secure_boot_cred.js，内含与之一致的 AES-GCM 加盐凭证参数，
+# 已随独立仓推上 public 仓（native-shell/water-ios/sec_crypt.js），性质敏感件。
+webroot/secure_boot_cred.js
+# 2026-10-23（第 59 轮）：该文件是访问口令 AES-GCM 加盐凭证（199B，含 salt+密文），
+# 曾被 git add -A 带入并推上 public 仓 → 匿名可下载。性质敏感件一律不进版本库。
+native-shell/water-ios/sec_crypt.js
