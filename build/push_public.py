@@ -58,7 +58,7 @@ SELF_SKIP_NAMES = ("push.py", "push_public.py")
 # 静态名册（与内容口径**等价表述**，供 `_gates/verify_sync_chain_liveness_e2e.py`
 # 静态抽取做交叉印证：门禁 X-4 会按这份名册独立遍历源树，再与下面扫描的实况比对）。
 # 口径与 push.py 的 SENSITIVE_NAMES / ALLOW_NAMES 保持一致，避免双口径漂移。
-SENSITIVE_NAMES = ()
+SENSITIVE_NAMES = ("secure_boot_cred.js", "ai_seed.js", ".github_token", "sec_crypt.js")
 ALLOW_NAMES = ("ai_seed.demo.js",)
 
 
