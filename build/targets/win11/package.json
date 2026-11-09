@@ -1,0 +1,73 @@
+{
+  "name": "gujian-daka",
+  "productName": "古建景点打卡",
+  "version": "2.4.7",
+  "description": "古建景点打卡（天地图底图 · 奥维 ovkmz 互通）",
+  "author": "炎冰",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack:nsis": "electron-builder --win nsis --x64",
+    "pack:msi": "electron-builder --win msi --x64",
+    "pack:all": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "cn.gujian.daka",
+    "productName": "古建景点打卡",
+    "copyright": "Copyright © 2026 炎冰",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "jingmi_app/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "msi",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}V${version}_win64.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "古建景点打卡",
+      "deleteAppDataOnUninstall": false
+    },
+    "msi": {
+      "oneClick": false,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "additionalLightArgs": [
+        "-cultures:zh-CN",
+        "-sval"
+      ],
+      "shortcutName": "古建景点打卡"
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    }
+  },
+  "homepage": "https://techpromo.cn/gujian-daka"
+}
