@@ -1,0 +1,45 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.gujian'
+    compileSdk 34
+
+    // 发布签名：仅当本地 keystore 存在时启用（口令从环境变量读取，不入库）
+    // 本地未提供 keystore 时自动降级为 debug 签名，便于贡献者也能构建
+    signingConfigs {
+        def ksFile = file('../../keystore/release.keystore')
+        if (ksFile.exists()) {
+            release {
+                storeFile ksFile
+                storePassword project.hasProperty('GUJIAN_STORE_PW') ? GUJIAN_STORE_PW : System.getenv('GUJIAN_STORE_PW')
+                keyAlias 'yijitun'
+                keyPassword project.hasProperty('GUJIAN_KEY_PW') ? GUJIAN_KEY_PW : System.getenv('GUJIAN_KEY_PW')
+            }
+        }
+    }
+
+    defaultConfig {
+        applicationId 'com.gujian.daka'
+        minSdk 24
+        targetSdk 34
+        versionCode 3
+        versionName '2.2'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // 本地有发布 keystore 则用其签名，否则用 debug 签名（公开库默认路径）
+            def rc = signingConfigs.findByName('release')
+            signingConfig rc != null ? rc : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+}
