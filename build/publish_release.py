@@ -227,7 +227,7 @@ def main():
     if not repo:
         if not a.app:
             sys.exit('需指定 --repo 或 --app')
-        repo = 'g101400/%s-%s-4060' % (a.app, a.channel) if a.app != 'gujian' else 'g101400/gujian4060'
+        repo = {'shuili':'g101400/shuili-yitu','gujian':'g101400/gujian-travel','perc':'g101400/shuili-ganzhi'}.get(a.app, 'g101400/%s-%s-4060' % (a.app, a.channel))
     tag = a.tag or detect_version(ver_root) or 'v0.0.0'
 
     # ---- 产物收集（修复：--app 必须过滤，避免跨端串包）----
