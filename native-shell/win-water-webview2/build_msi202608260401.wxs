@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 一键生成 MSI 安装包：需先安装 WiX Toolset (https://wixtoolset.org/) -->
+<!-- 用法（在 publish_<proj> 目录执行）：
+     "%WIX%\bin\heat.exe" dir "." -gg -sfrag -sreg -srd -scom -dr INSTALLFOLDER -cg MainComponents -var var.SourceDir -out files.wxs
+     "%WIX%\bin\candle.exe" -dSourceDir=. product.wxs files.wxs
+     "%WIX%\bin\light.exe" -ext WixUIExtension -out "<工程名>_Setup.msi" product.wxs files.wxs
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="水利工程基础信息一张图" Language="2052" Version="3.30.1" Manufacturer="小七" UpgradeCode="{A1B2C3D4-0001-4000-8000-000000000001}">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+    <MajorUpgrade DowngradeErrorMessage="已安装更高版本。" />
+    <MediaTemplate EmbedCab="yes" />
+    <Feature Id="ProductFeature" Title="主程序" Level="1">
+      <ComponentGroupRef Id="MainComponents" />
+    </Feature>
+    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+    <UIRef Id="WixUI_InstallDir" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="水利工程一张图">
+          <!-- heat 生成的组件会挂到此处 -->
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="水利工程一张图"/>
+      </Directory>
+    </Directory>
+    <Component Id="StartMenuShortcut" Guid="{A1B2C3D4-0002-4000-8000-000000000002}" Directory="ApplicationProgramsFolder">
+      <Shortcut Id="AppShortcut" Name="水利工程一张图" Target="[INSTALLFOLDER]水利工程基础信息一张图.exe" WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="CleanMenuDir" Directory="ApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\小七\水利工程一张图" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Feature Id="ShortcutFeature" Title="开始菜单快捷方式" Level="1">
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Product>
+</Wix>
