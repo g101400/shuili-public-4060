@@ -198,7 +198,7 @@ def main():
             print("JSON " + json.dumps(summary, ensure_ascii=False))
         sys.exit(0)
 
-    added = updated = skipped = failed = 0
+    added = updated = skipped = failed = read_fail = 0
     for rel in files:
         full = os.path.join(ROOT, rel)
         try:
@@ -210,7 +210,23 @@ def main():
             continue
         url = f"{API}/repos/{REPO_PUBLIC}/contents/{urllib.parse.quote(rel, safe='/')}?ref={BRANCH}"
         st, j = _base.api("GET", url, token)
-        remote_sha = j.get("sha") if st == 200 else None
+        # 🔴 2026-11-11（第 79 轮，形态 (68)）：GET 失败绝不等于「远端没有这个文件」。
+        #   修复前：`remote_sha = j.get("sha") if st == 200 else None` —— 把 None（网络截断）
+        #   与 404（真不存在）合并成同一个 None，于是对已存在的远端文件发起 PUT；
+        #   PUT 若也失败，报告只留一句 `FAIL rel -> HTTP None`，
+        #   真正的原因（IncompleteRead / 超时）被丢掉，事后只能靠第三方取证倒推。
+        #   现在：三态显式分流，并把原始错误串带进报告。
+        if st == 404:
+            remote_sha = None          # 真·远端不存在 → 走 add
+        elif st == 200:
+            remote_sha = j.get("sha")
+        else:
+            # 读不到远端状态 → 无法判断是否需要写；不写，且必须留下原因
+            err = j.get("_error") if isinstance(j, dict) else None
+            print(f"[READ-FAIL] {rel} -> HTTP {st} err={err!r}（未写入，不计入 failed；"
+                  f"属传输层不可判定，需重跑收敛）")
+            read_fail += 1
+            continue
         if remote_sha == _base.blob_sha(data):
             skipped += 1
             continue
@@ -221,21 +237,34 @@ def main():
         }
         if remote_sha:
             body["sha"] = remote_sha
-        st2, _ = _base.api("PUT", url, token, body)
+        st2, j2 = _base.api("PUT", url, token, body)
         if st2 in (200, 201):
             print(f"{'UPD' if remote_sha else 'ADD'}  {rel}")
             added += 0 if remote_sha else 1
             updated += 1 if remote_sha else 0
         else:
-            print(f"FAIL {rel} -> HTTP {st2}")
+            err2 = j2.get("_error") if isinstance(j2, dict) else None
+            print(f"FAIL {rel} -> HTTP {st2} err={err2!r}")
             failed += 1
 
     summary = dict(added=added, updated=updated, skipped=skipped, failed=failed,
-                   total=added + updated + skipped + failed, mode="apply")
+                   read_fail=read_fail,
+                   total=added + updated + skipped + failed + read_fail, mode="apply")
     print("PUSH_SUMMARY " + " ".join(f"{k}={v}" for k, v in summary.items()))
     if args.json:
         print("JSON " + json.dumps(summary, ensure_ascii=False))
-    sys.exit(0 if failed == 0 else 1)
+    # 退出码语义（三态，勿合并）：
+    #   0 = 全部处理完（含 skipped），零 failed 零 read_fail
+    #   1 = 有文件写入失败（PUT 非 2xx）—— 真失败，须排查
+    #   5 = 零写入失败，但有文件「远端状态不可判定」（GET 传输层失败）
+    #       → 既不能报成功（不知道远端是否一致），也不等同真失败（可能零改动）
+    if failed:
+        sys.exit(1)
+    if read_fail:
+        print(f"[EXIT5] {read_fail} 个文件远端状态不可判定（传输层），本次未写入；"
+              f"网络稳定后重跑即可收敛为全 skipped")
+        sys.exit(5)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
